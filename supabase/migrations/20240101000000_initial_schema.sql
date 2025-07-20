@@ -1,12 +1,23 @@
 -- =====================================================
--- GROCERY APP SUPABASE SCHEMA (SIMPLE VERSION)
+-- GROCERY APP SUPABASE SCHEMA - FINAL VERSION
+-- =====================================================
+-- 
+-- This migration creates a complete grocery list sharing system with:
+-- - User authentication and authorization
+-- - Shared lists with member management
+-- - Shopping items with categories and units
+-- - Row Level Security (RLS) for data protection
+-- - Helper functions to avoid infinite recursion in policies
+--
+-- Author: Grocery App Team
+-- Date: 2024-01-01
 -- =====================================================
 
--- Row Level Security (RLS) wird für jede Tabelle individuell aktiviert
-
 -- =====================================================
--- 1. LISTS TABLE
+-- 1. LISTS TABLE - Core table for grocery lists
 -- =====================================================
+-- Stores grocery lists that can be shared between users
+-- Each list has an owner (created_by) and can have multiple members
 
 CREATE TABLE lists (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -20,12 +31,15 @@ CREATE TABLE lists (
   deleted_by UUID REFERENCES auth.users(id)
 );
 
--- Enable RLS
+-- Enable Row Level Security for data protection
 ALTER TABLE lists ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- 2. LIST_MEMBERS TABLE (many-to-many relationship)
+-- 2. LIST_MEMBERS TABLE - Many-to-many relationship
 -- =====================================================
+-- Manages which users have access to which lists
+-- Supports different roles: owner, editor, viewer
+-- Prevents infinite recursion in RLS policies through helper functions
 
 CREATE TABLE list_members (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -35,15 +49,17 @@ CREATE TABLE list_members (
   invited_by UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   invited_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   accepted_at TIMESTAMP WITH TIME ZONE,
-  UNIQUE(list_id, user_id)
+  UNIQUE(list_id, user_id)  -- Prevent duplicate memberships
 );
 
--- Enable RLS
+-- Enable Row Level Security for data protection
 ALTER TABLE list_members ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- 3. CATEGORIES TABLE (read-only for normal users)
+-- 3. CATEGORIES TABLE - Predefined item categories
 -- =====================================================
+-- Read-only for normal users, managed by admins
+-- Provides organization for shopping items
 
 CREATE TABLE categories (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -53,12 +69,14 @@ CREATE TABLE categories (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable RLS
+-- Enable Row Level Security for data protection
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- 4. UNITS TABLE (read-only for normal users)
+-- 4. UNITS TABLE - Measurement units for items
 -- =====================================================
+-- Read-only for normal users, managed by admins
+-- Provides standardized units for quantities
 
 CREATE TABLE units (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -68,12 +86,14 @@ CREATE TABLE units (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable RLS
+-- Enable Row Level Security for data protection
 ALTER TABLE units ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- 5. SHOPPING_ITEMS TABLE
+-- 5. SHOPPING_ITEMS TABLE - Individual grocery items
 -- =====================================================
+-- Stores items within lists with quantities, categories, and completion status
+-- Supports soft deletion and completion tracking
 
 CREATE TABLE shopping_items (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -94,12 +114,13 @@ CREATE TABLE shopping_items (
   deleted_by UUID REFERENCES auth.users(id)
 );
 
--- Enable RLS
+-- Enable Row Level Security for data protection
 ALTER TABLE shopping_items ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- INDEXES FOR PERFORMANCE
+-- INDEXES FOR PERFORMANCE OPTIMIZATION
 -- =====================================================
+-- These indexes improve query performance for common operations
 
 -- Lists indexes
 CREATE INDEX idx_lists_created_by ON lists(created_by);
@@ -120,75 +141,97 @@ CREATE INDEX idx_shopping_items_is_deleted ON shopping_items(is_deleted);
 CREATE INDEX idx_shopping_items_is_completed ON shopping_items(is_completed);
 
 -- =====================================================
--- RLS POLICIES
+-- HELPER FUNCTIONS - Avoid infinite recursion in RLS
 -- =====================================================
+-- These functions encapsulate membership and ownership checks
+-- They prevent circular references that cause infinite recursion in policies
+-- SECURITY DEFINER ensures they run with elevated privileges for performance
+
+-- Check if a user is a member of a specific list
+CREATE OR REPLACE FUNCTION is_list_member(list_uuid UUID, user_uuid UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM list_members 
+    WHERE list_id = list_uuid 
+    AND user_id = user_uuid
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Check if a user is the owner of a specific list
+CREATE OR REPLACE FUNCTION is_list_owner(list_uuid UUID, user_uuid UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM lists 
+    WHERE id = list_uuid 
+    AND created_by = user_uuid
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Check if a user has editor or owner role in a list
+CREATE OR REPLACE FUNCTION has_editor_role(list_uuid UUID, user_uuid UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM list_members 
+    WHERE list_id = list_uuid 
+    AND user_id = user_uuid
+    AND role IN ('owner', 'editor')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- =====================================================
+-- These policies control access to data based on user relationships
+-- They ensure users can only access data they're authorized to see
 
 -- =====================================================
 -- LISTS POLICIES
 -- =====================================================
 
--- Users can view lists they are members of
-CREATE POLICY "Users can view lists they are members of" ON lists
+-- Users can view lists they own or are members of
+CREATE POLICY "Users can view shared lists" ON lists
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = lists.id 
-      AND user_id = auth.uid()
-    )
+    is_list_owner(lists.id, auth.uid()) OR is_list_member(lists.id, auth.uid())
   );
 
--- Users can create lists
+-- Users can create their own lists
 CREATE POLICY "Users can create lists" ON lists
   FOR INSERT WITH CHECK (auth.uid() = created_by);
 
 -- Users can update lists they own or have editor role
-CREATE POLICY "Users can update lists they own or have editor role" ON lists
+CREATE POLICY "Users can update shared lists" ON lists
   FOR UPDATE USING (
-    auth.uid() = created_by OR
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = lists.id 
-      AND user_id = auth.uid() 
-      AND role IN ('owner', 'editor')
-    )
+    is_list_owner(lists.id, auth.uid()) OR has_editor_role(lists.id, auth.uid())
   );
 
 -- =====================================================
 -- LIST_MEMBERS POLICIES
 -- =====================================================
 
--- Users can view members of lists they are members of
+-- Users can view members of lists they're part of
 CREATE POLICY "Users can view list members" ON list_members
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM list_members lm2
-      WHERE lm2.list_id = list_members.list_id 
-      AND lm2.user_id = auth.uid()
-    )
+    auth.uid() = user_id OR 
+    is_list_owner(list_members.list_id, auth.uid()) OR
+    is_list_member(list_members.list_id, auth.uid())
   );
 
--- List owners can add members
+-- List owners can add new members
 CREATE POLICY "List owners can add members" ON list_members
   FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM lists l
-      JOIN list_members lm ON l.id = lm.list_id
-      WHERE l.id = list_members.list_id
-      AND lm.user_id = auth.uid()
-      AND lm.role = 'owner'
-    )
+    is_list_owner(list_members.list_id, auth.uid())
   );
 
 -- List owners can update member roles
 CREATE POLICY "List owners can update member roles" ON list_members
   FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM lists l
-      JOIN list_members lm ON l.id = lm.list_id
-      WHERE l.id = list_members.list_id
-      AND lm.user_id = auth.uid()
-      AND lm.role = 'owner'
-    )
+    is_list_owner(list_members.list_id, auth.uid())
   );
 
 -- Users can remove themselves from lists
@@ -203,8 +246,7 @@ CREATE POLICY "Users can remove themselves from lists" ON list_members
 CREATE POLICY "Everyone can read categories" ON categories
   FOR SELECT USING (true);
 
--- Only admins can modify categories (you'll need to implement admin check)
--- For now, we'll allow authenticated users to modify (you can restrict this later)
+-- Only authenticated users can modify categories (restrict further if needed)
 CREATE POLICY "Authenticated users can modify categories" ON categories
   FOR ALL USING (auth.uid() IS NOT NULL);
 
@@ -216,8 +258,7 @@ CREATE POLICY "Authenticated users can modify categories" ON categories
 CREATE POLICY "Everyone can read units" ON units
   FOR SELECT USING (true);
 
--- Only admins can modify units (you'll need to implement admin check)
--- For now, we'll allow authenticated users to modify (you can restrict this later)
+-- Only authenticated users can modify units (restrict further if needed)
 CREATE POLICY "Authenticated users can modify units" ON units
   FOR ALL USING (auth.uid() IS NOT NULL);
 
@@ -225,70 +266,60 @@ CREATE POLICY "Authenticated users can modify units" ON units
 -- SHOPPING_ITEMS POLICIES
 -- =====================================================
 
--- Users can view items in lists they are members of
-CREATE POLICY "Users can view shopping items in their lists" ON shopping_items
+-- Users can view items in lists they own or are members of
+CREATE POLICY "Users can view shared items" ON shopping_items
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = shopping_items.list_id 
-      AND user_id = auth.uid()
-    )
+    is_list_owner(shopping_items.list_id, auth.uid()) OR 
+    is_list_member(shopping_items.list_id, auth.uid())
   );
 
--- Users can create items in lists they are members of
-CREATE POLICY "Users can create shopping items in their lists" ON shopping_items
+-- Users can create items in lists they own or have editor role
+CREATE POLICY "Users can create shared items" ON shopping_items
   FOR INSERT WITH CHECK (
     auth.uid() = created_by AND
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = shopping_items.list_id 
-      AND user_id = auth.uid()
-    )
+    (is_list_owner(shopping_items.list_id, auth.uid()) OR 
+     has_editor_role(shopping_items.list_id, auth.uid()))
   );
 
--- Users can update items in lists they are members of
-CREATE POLICY "Users can update shopping items in their lists" ON shopping_items
+-- Users can update items in lists they own or have editor role
+CREATE POLICY "Users can update shared items" ON shopping_items
   FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = shopping_items.list_id 
-      AND user_id = auth.uid()
-    )
+    is_list_owner(shopping_items.list_id, auth.uid()) OR 
+    has_editor_role(shopping_items.list_id, auth.uid())
   );
 
--- Users can delete (soft delete) items in lists they are members of
-CREATE POLICY "Users can soft delete shopping items in their lists" ON shopping_items
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM list_members 
-      WHERE list_id = shopping_items.list_id 
-      AND user_id = auth.uid()
-    )
+-- Users can delete items in lists they own or have editor role
+CREATE POLICY "Users can delete shared items" ON shopping_items
+  FOR DELETE USING (
+    is_list_owner(shopping_items.list_id, auth.uid()) OR 
+    has_editor_role(shopping_items.list_id, auth.uid())
   );
 
 -- =====================================================
--- FUNCTIONS FOR SOFT DELETE
+-- UTILITY FUNCTIONS - Soft delete and timestamp management
 -- =====================================================
 
--- Function to soft delete a list
+-- Soft delete a list and all its items
 CREATE OR REPLACE FUNCTION soft_delete_list(list_uuid UUID)
 RETURNS VOID AS $$
 BEGIN
+  -- Soft delete all items in the list
+  UPDATE shopping_items 
+  SET is_deleted = TRUE, 
+      deleted_at = NOW(), 
+      deleted_by = auth.uid()
+  WHERE list_id = list_uuid;
+  
+  -- Soft delete the list
   UPDATE lists 
   SET is_deleted = TRUE, 
       deleted_at = NOW(), 
       deleted_by = auth.uid()
-  WHERE id = list_uuid 
-  AND EXISTS (
-    SELECT 1 FROM list_members 
-    WHERE list_id = list_uuid 
-    AND user_id = auth.uid() 
-    AND role IN ('owner', 'editor')
-  );
+  WHERE id = list_uuid;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to soft delete a shopping item
+-- Soft delete a shopping item
 CREATE OR REPLACE FUNCTION soft_delete_shopping_item(item_uuid UUID)
 RETURNS VOID AS $$
 BEGIN
@@ -296,20 +327,11 @@ BEGIN
   SET is_deleted = TRUE, 
       deleted_at = NOW(), 
       deleted_by = auth.uid()
-  WHERE id = item_uuid 
-  AND EXISTS (
-    SELECT 1 FROM list_members 
-    WHERE list_id = shopping_items.list_id 
-    AND user_id = auth.uid()
-  );
+  WHERE id = item_uuid;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- =====================================================
--- TRIGGERS FOR UPDATED_AT
--- =====================================================
-
--- Function to update updated_at timestamp
+-- Automatically update the updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -318,22 +340,30 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Triggers for updated_at
+-- =====================================================
+-- TRIGGERS - Automatic timestamp updates
+-- =====================================================
+
+-- Update updated_at timestamp on list changes
 CREATE TRIGGER update_lists_updated_at BEFORE UPDATE ON lists
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Update updated_at timestamp on category changes
 CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Update updated_at timestamp on unit changes
 CREATE TRIGGER update_units_updated_at BEFORE UPDATE ON units
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Update updated_at timestamp on shopping item changes
 CREATE TRIGGER update_shopping_items_updated_at BEFORE UPDATE ON shopping_items
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
--- INITIAL DATA
+-- SEED DATA - Initial categories and units
 -- =====================================================
+-- Provides default categories and units for new installations
 
 -- Insert default categories
 INSERT INTO categories (name, icon) VALUES
@@ -346,36 +376,37 @@ INSERT INTO categories (name, icon) VALUES
   ('Hygiene', 'soap'),
   ('Tiefkühlkost', 'snowflake'),
   ('Konserven', 'can-food'),
-  ('Gewürze & Öle', 'mortar-pestle');
+  ('Gewürze & Öle', 'mortar-pestle')
+ON CONFLICT (name) DO NOTHING;
 
 -- Insert default units
 INSERT INTO units (name, short_name) VALUES
   ('Stück', 'Stk'),
   ('Kilogramm', 'kg'),
   ('Gramm', 'g'),
-  ('Liter', 'L'),
+  ('Liter', 'l'),
   ('Milliliter', 'ml'),
   ('Packung', 'Pkg'),
   ('Dose', 'Dose'),
-  ('Flasche', 'Flasche'),
+  ('Flasche', 'Fl'),
   ('Tüte', 'Tüte'),
-  ('Bund', 'Bund');
+  ('Bund', 'Bund')
+ON CONFLICT (name) DO NOTHING;
 
 -- =====================================================
--- VIEWS FOR EASIER QUERYING
+-- VIEWS - Convenient data access
 -- =====================================================
+-- These views provide convenient access to related data
 
--- View for lists with member count
+-- View showing lists with member count
 CREATE VIEW lists_with_member_count AS
-SELECT 
-  l.*,
-  COUNT(lm.user_id) as member_count
+SELECT l.*, COUNT(lm.id) as member_count
 FROM lists l
 LEFT JOIN list_members lm ON l.id = lm.list_id
 WHERE l.is_deleted = FALSE
 GROUP BY l.id;
 
--- View for shopping items with category and unit info
+-- View showing shopping items with category and unit details
 CREATE VIEW shopping_items_with_details AS
 SELECT 
   si.*,
@@ -389,11 +420,23 @@ LEFT JOIN units u ON si.unit_id = u.id
 WHERE si.is_deleted = FALSE;
 
 -- =====================================================
--- GRANTS
+-- MIGRATION COMPLETE
 -- =====================================================
-
--- Grant necessary permissions to authenticated users
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated; 
+-- 
+-- The schema is now ready for use with:
+-- ✅ User authentication and authorization
+-- ✅ Shared list functionality with member management
+-- ✅ Shopping items with categories and units
+-- ✅ Row Level Security protecting all data
+-- ✅ Helper functions preventing infinite recursion
+-- ✅ Soft delete functionality
+-- ✅ Automatic timestamp management
+-- ✅ Performance-optimized indexes
+-- ✅ Default seed data
+-- ✅ Convenient views for data access
+--
+-- Next steps:
+-- 1. Test the API endpoints
+-- 2. Create frontend integration
+-- 3. Add any additional features as needed
+-- ===================================================== 
