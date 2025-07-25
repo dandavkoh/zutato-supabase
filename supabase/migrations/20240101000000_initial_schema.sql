@@ -367,30 +367,48 @@ CREATE TRIGGER update_shopping_items_updated_at BEFORE UPDATE ON shopping_items
 
 -- Insert default categories
 INSERT INTO categories (name, icon) VALUES
-  ('Obst & Gemüse', 'apple-alt'),
-  ('Milchprodukte', 'cheese'),
-  ('Fleisch & Fisch', 'drumstick-bite'),
-  ('Backwaren', 'bread-slice'),
+  ('Obst', 'apple-alt'),
+  ('Gemüse', 'carrot'),
+  ('Brot & Backwaren', 'bread-slice'),
+  ('Milchprodukte & Eier', 'cheese-swiss'),
+  ('Fleisch', 'drumstick-bite'),
+  ('Fisch & Meeresfrüchte', 'fish'),
+  ('Tiefkühlkost', 'snowflake'),
+  ('Öl, Essig & Saucen', 'bottle-droplet')
+  ('Brotaufstriche & Dips', 'jar')
+  ('Kräuter & Gewürze', 'leaf')
+  ('Backzutaten', 'pie'),
+  ('Nudeln & Reis', 'bowl-chopsticks-noodles'),
+  ('Trockenfrüchte & Nüsse', 'chestnut'),
+  ('Fertigprodukte', 'boxes-packing'),
+  ('Milchersatz', 'box'),
+  ('Konserven', 'can-food'),
+  ('Cerealien & Müsli', 'bowl-spoon'),
+  ('Süßigkeiten & Snacks', 'candy'),
   ('Getränke', 'wine-bottle'),
   ('Haushalt', 'home'),
-  ('Hygiene', 'soap'),
-  ('Tiefkühlkost', 'snowflake'),
-  ('Konserven', 'can-food'),
-  ('Gewürze & Öle', 'mortar-pestle')
+  ('Drogerie & Kosmetik', 'soap'),
+  ('Tier', 'paw'),
+  ('Baby & Kind', 'baby'),
+  ('Arzneiprodukte', 'prescription-bottle-pill'),
+  ('Garten & Baumarkt', 'bag-seedling'),
 ON CONFLICT (name) DO NOTHING;
 
 -- Insert default units
 INSERT INTO units (name, short_name) VALUES
-  ('Stück', 'Stk'),
-  ('Kilogramm', 'kg'),
-  ('Gramm', 'g'),
-  ('Liter', 'l'),
   ('Milliliter', 'ml'),
-  ('Packung', 'Pkg'),
-  ('Dose', 'Dose'),
-  ('Flasche', 'Fl'),
-  ('Tüte', 'Tüte'),
+  ('Liter', 'l'),
+  ('Gramm', 'g'),
+  ('Kilogramm', 'kg'),
+  ('Packungen', 'Pkg'),
+  ('Flaschen', 'Fl'),
+  ('Stück', 'Stk'),
+  ('Kästen', 'Kästen'),
+  ('Boxen', 'Boxen'),
+  ('Gläser', 'Gl'),
+  ('Dosen', 'Dosen'),
   ('Bund', 'Bund')
+  ('Tuben', 'Tuben')
 ON CONFLICT (name) DO NOTHING;
 
 -- =====================================================
