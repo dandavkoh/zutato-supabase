@@ -832,7 +832,7 @@ CREATE OR REPLACE FUNCTION search_product_groups(
 RETURNS TABLE(
   id uuid, 
   title text, 
-  rank float, 
+  rank double precision, 
   src text
 ) 
 LANGUAGE plpgsql 
@@ -845,7 +845,7 @@ BEGIN
     SELECT 
       pg.id, 
       pg.title, 
-      ts_rank(pg.fts, q.ts) as rank, 
+      ts_rank(pg.fts, q.ts)::double precision as rank, 
       'fts'::text as src
     FROM product_groups pg, 
          (SELECT websearch_to_tsquery('german', term || ':*') ts) q
@@ -859,7 +859,7 @@ BEGIN
     SELECT 
       pg.id, 
       pg.title, 
-      similarity(pg.title, term) as rank, 
+      similarity(pg.title, term)::double precision as rank, 
       'fuzzy'::text as src
     FROM product_groups pg
     WHERE pg.title % term
