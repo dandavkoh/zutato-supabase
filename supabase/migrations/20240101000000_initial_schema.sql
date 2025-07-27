@@ -374,9 +374,9 @@ INSERT INTO categories (name, icon) VALUES
   ('Fleisch', 'drumstick-bite'),
   ('Fisch & Meeresfrüchte', 'fish'),
   ('Tiefkühlkost', 'snowflake'),
-  ('Öl, Essig & Saucen', 'bottle-droplet')
-  ('Brotaufstriche & Dips', 'jar')
-  ('Kräuter & Gewürze', 'leaf')
+  ('Öl, Essig & Saucen', 'bottle-droplet'),
+  ('Brotaufstriche & Dips', 'jar'),
+  ('Kräuter & Gewürze', 'leaf'),
   ('Backzutaten', 'pie'),
   ('Nudeln & Reis', 'bowl-chopsticks-noodles'),
   ('Trockenfrüchte & Nüsse', 'chestnut'),
@@ -391,7 +391,7 @@ INSERT INTO categories (name, icon) VALUES
   ('Tier', 'paw'),
   ('Baby & Kind', 'baby'),
   ('Arzneiprodukte', 'prescription-bottle-pill'),
-  ('Garten & Baumarkt', 'bag-seedling'),
+  ('Garten & Baumarkt', 'bag-seedling')
 ON CONFLICT (name) DO NOTHING;
 
 -- Insert default units
@@ -407,7 +407,7 @@ INSERT INTO units (name, short_name) VALUES
   ('Boxen', 'Boxen'),
   ('Gläser', 'Gl'),
   ('Dosen', 'Dosen'),
-  ('Bund', 'Bund')
+  ('Bund', 'Bund'),
   ('Tuben', 'Tuben')
 ON CONFLICT (name) DO NOTHING;
 
