@@ -808,14 +808,14 @@ INSERT INTO product_groups (title, default_unit_id, default_category_id, default
   ('Saatgut', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Kabelbinder', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Leim', (SELECT id FROM units WHERE name = 'Flaschen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
-  ('Draht', (SELECT id FROM units WHERE name = 'Meter' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
+  ('Draht', (SELECT id FROM units WHERE name = 'Stück' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Wandfarbe', (SELECT id FROM units WHERE name = 'Dosen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Kompost', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Rindenmulch', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Grillanzünder', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Rasendünger', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
   ('Werkzeuge', (SELECT id FROM units WHERE name = 'Stück' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1)),
-  ('Kaminholz', (SELECT id FROM units WHERE name = 'Kisten' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1))
+  ('Kaminholz', (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Garten & Baumarkt' LIMIT 1))
 ON CONFLICT (title) DO NOTHING;
 
 -- =====================================================
