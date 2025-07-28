@@ -832,6 +832,7 @@ RETURNS TABLE(
   id uuid, 
   title text, 
   default_icon text,
+  default_category_id uuid,
   rank double precision, 
   src text
 ) 
@@ -846,6 +847,7 @@ BEGIN
       pg.id, 
       pg.title, 
       pg.default_icon,
+      pg.default_category_id,
       ts_rank(pg.fts, q.ts)::double precision as rank, 
       'fts'::text as src
     FROM product_groups pg, 
@@ -861,6 +863,7 @@ BEGIN
       pg.id, 
       pg.title, 
       pg.default_icon,
+      pg.default_category_id,
       similarity(pg.title, term)::double precision as rank, 
       'fuzzy'::text as src
     FROM product_groups pg

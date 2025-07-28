@@ -102,7 +102,10 @@ CREATE TABLE shopping_items (
   quantity DECIMAL(10,2),
   unit_id UUID REFERENCES units(id),
   category_id UUID REFERENCES categories(id),
+  icon TEXT,
   notes TEXT,
+  store TEXT,
+  assigned_to UUID REFERENCES auth.users(id),
   is_completed BOOLEAN DEFAULT FALSE,
   completed_at TIMESTAMP WITH TIME ZONE,
   completed_by UUID REFERENCES auth.users(id),
@@ -431,10 +434,13 @@ SELECT
   c.name as category_name,
   c.icon as category_icon,
   u.name as unit_name,
-  u.short_name as unit_short_name
+  u.short_name as unit_short_name,
+  assigned_user.email as assigned_user_email,
+  assigned_user.raw_user_meta_data->>'full_name' as assigned_user_name
 FROM shopping_items si
 LEFT JOIN categories c ON si.category_id = c.id
 LEFT JOIN units u ON si.unit_id = u.id
+LEFT JOIN auth.users assigned_user ON si.assigned_to = assigned_user.id
 WHERE si.is_deleted = FALSE;
 
 -- =====================================================
