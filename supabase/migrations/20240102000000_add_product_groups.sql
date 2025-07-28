@@ -831,6 +831,7 @@ CREATE OR REPLACE FUNCTION search_product_groups(
 RETURNS TABLE(
   id uuid, 
   title text, 
+  default_icon text,
   rank double precision, 
   src text
 ) 
@@ -844,6 +845,7 @@ BEGIN
     SELECT 
       pg.id, 
       pg.title, 
+      pg.default_icon,
       ts_rank(pg.fts, q.ts)::double precision as rank, 
       'fts'::text as src
     FROM product_groups pg, 
@@ -858,6 +860,7 @@ BEGIN
     SELECT 
       pg.id, 
       pg.title, 
+      pg.default_icon,
       similarity(pg.title, term)::double precision as rank, 
       'fuzzy'::text as src
     FROM product_groups pg
