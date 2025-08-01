@@ -24,4 +24,4 @@ steps:
     PathtoPublish: ''
     ArtifactName: 'supabase-build'
     publishLocation: 'Container'
-  displayName: 'Publish dist folder as artifact'
+  displayName: 'Publish entire repo as artifact'
