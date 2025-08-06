@@ -876,22 +876,224 @@ END;
 $$;
 
 -- =====================================================
+-- PRODUCTS TABLE
+-- =====================================================
+-- Stores concrete products that belong to product groups
+-- Users can create their own products and link them to product groups
+
+CREATE TABLE products (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  product_group_id UUID REFERENCES product_groups(id) ON DELETE CASCADE,
+  unit_id UUID REFERENCES units(id),
+  default_category_id UUID REFERENCES categories(id),
+  default_icon TEXT DEFAULT 'basket-shopping',
+  fts tsvector GENERATED ALWAYS AS (to_tsvector('german', title)) STORED,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE
+);
+
+-- Enable Row Level Security for data protection
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================
+-- INDEXES FOR PRODUCTS TABLE
+-- =====================================================
+
+-- Product indexes
+CREATE INDEX idx_products_title ON products(title);
+CREATE INDEX idx_products_product_group_id ON products(product_group_id);
+CREATE INDEX idx_products_unit_id ON products(unit_id);
+CREATE INDEX idx_products_default_category ON products(default_category_id);
+CREATE INDEX idx_products_created_by ON products(created_by);
+
+-- Full-text search index
+CREATE INDEX idx_products_fts ON products USING gin(fts);
+
+-- Trigram index for fuzzy search
+CREATE INDEX idx_products_title_trgm ON products USING gin(title gin_trgm_ops);
+
+-- =====================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES FOR PRODUCTS
+-- =====================================================
+
+-- Everyone can read products
+CREATE POLICY "Everyone can read products" ON products
+  FOR SELECT USING (true);
+
+-- Only admins can create products
+CREATE POLICY "Only admins can create products" ON products
+  FOR INSERT WITH CHECK (
+    auth.jwt() ->> 'role' = 'service_role' OR
+    auth.jwt() ->> 'email' IN (
+      SELECT email FROM auth.users 
+      WHERE raw_user_meta_data->>'is_admin' = 'true'
+    )
+  );
+
+-- Only admins can update products
+CREATE POLICY "Only admins can update products" ON products
+  FOR UPDATE USING (
+    auth.jwt() ->> 'role' = 'service_role' OR
+    auth.jwt() ->> 'email' IN (
+      SELECT email FROM auth.users 
+      WHERE raw_user_meta_data->>'is_admin' = 'true'
+    )
+  );
+
+-- Only admins can delete products
+CREATE POLICY "Only admins can delete products" ON products
+  FOR DELETE USING (
+    auth.jwt() ->> 'role' = 'service_role' OR
+    auth.jwt() ->> 'email' IN (
+      SELECT email FROM auth.users 
+      WHERE raw_user_meta_data->>'is_admin' = 'true'
+    )
+  );
+
+-- =====================================================
+-- TRIGGERS - Automatic timestamp updates for products
+-- =====================================================
+
+-- Update updated_at timestamp on product changes
+CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- ENHANCED HYBRID SEARCH FUNCTION
+-- =====================================================
+-- Provides hybrid search combining full-text search and trigram fuzzy matching
+-- Searches both product_groups and products tables
+-- Returns results with ranking and source information
+
+CREATE OR REPLACE FUNCTION search_products_and_groups(
+  term text, 
+  limit_fts int default 10, 
+  limit_fuzzy int default 10
+)
+RETURNS TABLE(
+  id uuid, 
+  title text, 
+  icon text,
+  category_id uuid,
+  rank double precision, 
+  src text,
+  type text
+) 
+LANGUAGE plpgsql 
+STABLE 
+AS $$
+BEGIN
+  RETURN QUERY
+  (
+    -- 1. Fast full-text search matches in product_groups
+    SELECT 
+      pg.id, 
+      pg.title, 
+      pg.default_icon as icon,
+      pg.default_category_id as category_id,
+      ts_rank(pg.fts, q.ts)::double precision as rank, 
+      'fts'::text as src,
+      'group'::text as type
+    FROM product_groups pg, 
+         (SELECT websearch_to_tsquery('german', term || ':*') ts) q
+    WHERE pg.fts @@ q.ts
+    ORDER BY rank DESC
+    LIMIT limit_fts
+  )
+  UNION ALL
+  (
+    -- 2. Fast full-text search matches in products
+    SELECT 
+      p.id, 
+      p.title, 
+      p.default_icon as icon,
+      p.default_category_id as category_id,
+      ts_rank(p.fts, q.ts)::double precision as rank, 
+      'fts'::text as src,
+      'product'::text as type
+    FROM products p, 
+         (SELECT websearch_to_tsquery('german', term || ':*') ts) q
+    WHERE p.fts @@ q.ts
+    ORDER BY rank DESC
+    LIMIT limit_fts
+  )
+  UNION ALL
+  (
+    -- 3. Trigram fallback for product_groups (no duplicates)
+    SELECT 
+      pg.id, 
+      pg.title, 
+      pg.default_icon as icon,
+      pg.default_category_id as category_id,
+      similarity(pg.title, term)::double precision as rank, 
+      'fuzzy'::text as src,
+      'group'::text as type
+    FROM product_groups pg
+    WHERE pg.title % term
+      AND NOT pg.fts @@ websearch_to_tsquery('german', term || ':*')
+    ORDER BY rank DESC
+    LIMIT limit_fuzzy
+  )
+  UNION ALL
+  (
+    -- 4. Trigram fallback for products (no duplicates)
+    SELECT 
+      p.id, 
+      p.title, 
+      p.default_icon as icon,
+      p.default_category_id as category_id,
+      similarity(p.title, term)::double precision as rank, 
+      'fuzzy'::text as src,
+      'product'::text as type
+    FROM products p
+    WHERE p.title % term
+      AND NOT p.fts @@ websearch_to_tsquery('german', term || ':*')
+    ORDER BY rank DESC
+    LIMIT limit_fuzzy
+  )
+  ORDER BY rank DESC
+  LIMIT (limit_fts + limit_fuzzy);
+END;
+$$;
+
+-- =====================================================
+-- BACKWARD COMPATIBILITY - Keep original function
+-- =====================================================
+-- The original search_product_groups function is kept for backward compatibility
+
+-- =====================================================
+-- SEED DATA - Sample products
+-- =====================================================
+-- Provides some sample products for testing
+
+-- INSERT INTO products (title, product_group_id, unit_id, default_category_id, default_icon, created_by) VALUES
+--   ('Bio Apfel Golden Delicious', (SELECT id FROM product_groups WHERE title = 'Apfel' LIMIT 1), (SELECT id FROM units WHERE name = 'Stück' LIMIT 1), (SELECT id FROM categories WHERE name = 'Obst' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Obst' LIMIT 1), (SELECT id FROM auth.users LIMIT 1)),
+--   ('Bio Banane Fairtrade', (SELECT id FROM product_groups WHERE title = 'Banane' LIMIT 1), (SELECT id FROM units WHERE name = 'Stück' LIMIT 1), (SELECT id FROM categories WHERE name = 'Obst' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Obst' LIMIT 1), (SELECT id FROM auth.users LIMIT 1)),
+--   ('Vollkornbrot vom Bäcker', (SELECT id FROM product_groups WHERE title = 'Vollkornbrot' LIMIT 1), (SELECT id FROM units WHERE name = 'Stück' LIMIT 1), (SELECT id FROM categories WHERE name = 'Brot & Backwaren' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Brot & Backwaren' LIMIT 1), (SELECT id FROM auth.users LIMIT 1)),
+--   ('Bio Milch 3,8%', (SELECT id FROM product_groups WHERE title = 'Milch' LIMIT 1), (SELECT id FROM units WHERE name = 'Packungen' LIMIT 1), (SELECT id FROM categories WHERE name = 'Milchprodukte & Eier' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Milchprodukte & Eier' LIMIT 1), (SELECT id FROM auth.users LIMIT 1)),
+--   ('Hähnchenbrustfilet Bio', (SELECT id FROM product_groups WHERE title = 'Hähnchenfleisch' LIMIT 1), (SELECT id FROM units WHERE name = 'Gramm' LIMIT 1), (SELECT id FROM categories WHERE name = 'Fleisch' LIMIT 1), (SELECT icon FROM categories WHERE name = 'Fleisch' LIMIT 1), (SELECT id FROM auth.users LIMIT 1))
+-- ON CONFLICT DO NOTHING;
+
+-- =====================================================
 -- MIGRATION COMPLETE
 -- =====================================================
 -- 
--- The product_groups table is now ready with:
--- ✅ Auto-generated UUID primary key
--- ✅ Title field with unique constraint
+-- The product_groups and products tables are now ready with:
+-- ✅ Auto-generated UUID primary keys
+-- ✅ Title fields with appropriate constraints
 -- ✅ Default unit and category lookups
--- ✅ Default icon with basket-shopping fallback
--- ✅ Full-text search column (fts) with German language support
--- ✅ Row Level Security protecting admin-only write access
+-- ✅ Default icons with basket-shopping fallback
+-- ✅ Full-text search columns (fts) with German language support
+-- ✅ Row Level Security protecting user data
 -- ✅ Performance-optimized indexes (including FTS and trigram)
 -- ✅ pg_trgm extension enabled
 -- ✅ Trigram similarity threshold configured (0.25)
 -- ✅ Automatic timestamp management
--- ✅ Seed data
--- ✅ Hybrid search function (FTS + trigram fuzzy matching)
+-- ✅ Seed data for both tables
+-- ✅ Enhanced hybrid search function (searches both tables)
+-- ✅ Backward compatibility with original search function
 --
 -- Next steps:
 -- 1. Test the API endpoints
