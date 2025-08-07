@@ -56,12 +56,12 @@ CREATE TABLE list_members (
 ALTER TABLE list_members ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- 3. CATEGORIES TABLE - Predefined item categories
+-- 3. GROCERY_CATEGORIES TABLE - Predefined item categories
 -- =====================================================
 -- Read-only for normal users, managed by admins
 -- Provides organization for shopping items
 
-CREATE TABLE categories (
+CREATE TABLE grocery_categories (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   icon TEXT DEFAULT 'basket-shopping',
@@ -70,7 +70,7 @@ CREATE TABLE categories (
 );
 
 -- Enable Row Level Security for data protection
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE grocery_categories ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- 4. UNITS TABLE - Measurement units for items
@@ -101,7 +101,7 @@ CREATE TABLE shopping_items (
   name TEXT NOT NULL,
   quantity DECIMAL(10,2),
   unit_id UUID REFERENCES units(id),
-  category_id UUID REFERENCES categories(id),
+  category_id UUID REFERENCES grocery_categories(id),
   icon TEXT,
   notes TEXT,
   store TEXT,
@@ -242,15 +242,15 @@ CREATE POLICY "Users can remove themselves from lists" ON list_members
   FOR DELETE USING (auth.uid() = user_id);
 
 -- =====================================================
--- CATEGORIES POLICIES (Read-only for normal users)
+-- GROCERY_CATEGORIES POLICIES (Read-only for normal users)
 -- =====================================================
 
--- Everyone can read categories
-CREATE POLICY "Everyone can read categories" ON categories
+-- Everyone can read grocery_categories
+CREATE POLICY "Everyone can read grocery_categories" ON grocery_categories
   FOR SELECT USING (true);
 
--- Only authenticated users can modify categories (restrict further if needed)
-CREATE POLICY "Authenticated users can modify categories" ON categories
+-- Only authenticated users can modify grocery_categories (restrict further if needed)
+CREATE POLICY "Authenticated users can modify grocery_categories" ON grocery_categories
   FOR ALL USING (auth.uid() IS NOT NULL);
 
 -- =====================================================
@@ -352,7 +352,7 @@ CREATE TRIGGER update_lists_updated_at BEFORE UPDATE ON lists
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Update updated_at timestamp on category changes
-CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories
+CREATE TRIGGER update_grocery_categories_updated_at BEFORE UPDATE ON grocery_categories
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Update updated_at timestamp on unit changes
@@ -364,12 +364,12 @@ CREATE TRIGGER update_shopping_items_updated_at BEFORE UPDATE ON shopping_items
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
--- SEED DATA - Initial categories and units
+-- SEED DATA - Initial grocery_categories and units
 -- =====================================================
--- Provides default categories and units for new installations
+-- Provides default grocery_categories and units for new installations
 
--- Insert default categories
-INSERT INTO categories (name, icon) VALUES
+-- Insert default grocery_categories
+INSERT INTO grocery_categories (name, icon) VALUES
   ('Obst', 'apple-alt'),
   ('Gemüse', 'carrot'),
   ('Brot & Backwaren', 'bread-slice'),
@@ -438,7 +438,7 @@ SELECT
   assigned_user.email as assigned_user_email,
   assigned_user.raw_user_meta_data->>'full_name' as assigned_user_name
 FROM shopping_items si
-LEFT JOIN categories c ON si.category_id = c.id
+LEFT JOIN grocery_categories c ON si.category_id = c.id
 LEFT JOIN units u ON si.unit_id = u.id
 LEFT JOIN auth.users assigned_user ON si.assigned_to = assigned_user.id
 WHERE si.is_deleted = FALSE;
