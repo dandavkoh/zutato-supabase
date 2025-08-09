@@ -32,6 +32,26 @@ CREATE TABLE recipe_categories (
 -- Enable Row Level Security for data protection
 ALTER TABLE recipe_categories ENABLE ROW LEVEL SECURITY;
 
+-- ======================================================
+-- 1a. RECIPE_UNITS TABLE - Measurement units for recipes
+-- ======================================================
+-- Read-only for normal users, managed by admins
+
+CREATE TABLE recipe_units (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  short_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security for data protection
+ALTER TABLE recipe_units ENABLE ROW LEVEL SECURITY;
+
+-- Timestamp trigger for recipe_units
+CREATE TRIGGER update_recipe_units_updated_at BEFORE UPDATE ON recipe_units
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- =====================================================
 -- 2. RECIPES TABLE - Main recipe information
 -- =====================================================
@@ -89,7 +109,7 @@ CREATE TABLE recipe_ingredients (
   recipe_id UUID REFERENCES recipes(id) ON DELETE CASCADE NOT NULL,
   section_id UUID REFERENCES recipe_ingredient_sections(id) ON DELETE CASCADE,
   quantity DECIMAL(10,2) NOT NULL,
-  unit_id UUID REFERENCES units(id),
+  unit_id UUID REFERENCES recipe_units(id),
   
   -- Flexible ingredient linking - only one should be set
   product_group_id UUID REFERENCES product_groups(id),
@@ -199,6 +219,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- =====================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =====================================================
+
+-- =====================================================
+-- RECIPE_UNITS POLICIES (Read-only for normal users)
+-- =====================================================
+
+-- Everyone can read recipe_units
+CREATE POLICY "Everyone can read recipe_units" ON recipe_units
+  FOR SELECT USING (true);
+
+-- Only authenticated users can modify recipe_units (tighten later for admins)
+CREATE POLICY "Authenticated users can modify recipe_units" ON recipe_units
+  FOR ALL USING (auth.uid() IS NOT NULL);
 
 -- =====================================================
 -- RECIPE_CATEGORIES POLICIES (Read-only for normal users)
@@ -326,6 +358,23 @@ CREATE TRIGGER update_recipe_steps_updated_at BEFORE UPDATE ON recipe_steps
 -- SEED DATA - Recipe categories
 -- =====================================================
 
+-- Seed data for recipe_units
+INSERT INTO recipe_units (name, short_name) VALUES
+  ('Milliliter', 'ml'),
+  ('Liter', 'l'),
+  ('Gramm', 'g'),
+  ('Kilogramm', 'kg'),
+  ('Packungen', 'Pkg'),
+  ('Flaschen', 'Fl'),
+  ('Stück', 'Stk'),
+  ('Kästen', 'Kästen'),
+  ('Boxen', 'Boxen'),
+  ('Gläser', 'Gl'),
+  ('Dosen', 'Dosen'),
+  ('Bund', 'Bund'),
+  ('Tuben', 'Tuben')
+ON CONFLICT (name) DO NOTHING;
+
 -- Insert default recipe categories
 INSERT INTO recipe_categories (name, icon) VALUES
   ('Hauptspeise', 'utensils'),
@@ -404,7 +453,7 @@ SELECT
 FROM recipe_ingredients ri
 JOIN recipes r ON ri.recipe_id = r.id
 LEFT JOIN recipe_ingredient_sections ris ON ri.section_id = ris.id
-LEFT JOIN units u ON ri.unit_id = u.id
+LEFT JOIN recipe_units u ON ri.unit_id = u.id
 LEFT JOIN product_groups pg ON ri.product_group_id = pg.id
 LEFT JOIN products p ON ri.product_id = p.id
 WHERE r.is_deleted = FALSE;
