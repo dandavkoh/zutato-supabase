@@ -67,35 +67,7 @@ CREATE INDEX idx_product_groups_title_trgm ON product_groups USING gin(title gin
 CREATE POLICY "Everyone can read product groups" ON product_groups
   FOR SELECT USING (true);
 
--- Only admins can create product groups
-CREATE POLICY "Only admins can create product groups" ON product_groups
-  FOR INSERT WITH CHECK (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
-
--- Only admins can update product groups
-CREATE POLICY "Only admins can update product groups" ON product_groups
-  FOR UPDATE USING (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
-
--- Only admins can delete product groups
-CREATE POLICY "Only admins can delete product groups" ON product_groups
-  FOR DELETE USING (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
+-- No write policies for product_groups to enforce read-only access
 
 -- =====================================================
 -- TRIGGERS - Automatic timestamp updates
@@ -922,35 +894,7 @@ CREATE INDEX idx_products_title_trgm ON products USING gin(title gin_trgm_ops);
 CREATE POLICY "Everyone can read products" ON products
   FOR SELECT USING (true);
 
--- Only admins can create products
-CREATE POLICY "Only admins can create products" ON products
-  FOR INSERT WITH CHECK (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
-
--- Only admins can update products
-CREATE POLICY "Only admins can update products" ON products
-  FOR UPDATE USING (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
-
--- Only admins can delete products
-CREATE POLICY "Only admins can delete products" ON products
-  FOR DELETE USING (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
+-- No write policies for products to enforce read-only access
 
 -- =====================================================
 -- TRIGGERS - Automatic timestamp updates for products

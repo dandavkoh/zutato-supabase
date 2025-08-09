@@ -249,9 +249,7 @@ CREATE POLICY "Users can remove themselves from lists" ON list_members
 CREATE POLICY "Everyone can read grocery_categories" ON grocery_categories
   FOR SELECT USING (true);
 
--- Only authenticated users can modify grocery_categories (restrict further if needed)
-CREATE POLICY "Authenticated users can modify grocery_categories" ON grocery_categories
-  FOR ALL USING (auth.uid() IS NOT NULL);
+-- No write policies for grocery_categories to enforce read-only access
 
 -- =====================================================
 -- GROCERY_UNITS POLICIES (Read-only for normal users)
@@ -261,9 +259,7 @@ CREATE POLICY "Authenticated users can modify grocery_categories" ON grocery_cat
 CREATE POLICY "Everyone can read grocery_units" ON grocery_units
   FOR SELECT USING (true);
 
--- Only authenticated users can modify units (restrict further if needed)
-CREATE POLICY "Authenticated users can modify grocery_units" ON grocery_units
-  FOR ALL USING (auth.uid() IS NOT NULL);
+-- No write policies for grocery_units to enforce read-only access
 
 -- =====================================================
 -- SHOPPING_ITEMS POLICIES

@@ -228,9 +228,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE POLICY "Everyone can read recipe_units" ON recipe_units
   FOR SELECT USING (true);
 
--- Only authenticated users can modify recipe_units (tighten later for admins)
-CREATE POLICY "Authenticated users can modify recipe_units" ON recipe_units
-  FOR ALL USING (auth.uid() IS NOT NULL);
+-- No write policies for recipe_units to enforce read-only access
 
 -- =====================================================
 -- RECIPE_CATEGORIES POLICIES (Read-only for normal users)
@@ -240,15 +238,7 @@ CREATE POLICY "Authenticated users can modify recipe_units" ON recipe_units
 CREATE POLICY "Everyone can read recipe_categories" ON recipe_categories
   FOR SELECT USING (true);
 
--- Only admins can modify recipe categories
-CREATE POLICY "Only admins can modify recipe_categories" ON recipe_categories
-  FOR ALL USING (
-    auth.jwt() ->> 'role' = 'service_role' OR
-    auth.jwt() ->> 'email' IN (
-      SELECT email FROM auth.users 
-      WHERE raw_user_meta_data->>'is_admin' = 'true'
-    )
-  );
+-- No write policies for recipe_categories to enforce read-only access
 
 -- =====================================================
 -- RECIPES POLICIES
@@ -284,9 +274,17 @@ CREATE POLICY "Users can view recipe sections" ON recipe_ingredient_sections
     )
   );
 
--- Recipe creators can manage sections
-CREATE POLICY "Recipe creators can manage sections" ON recipe_ingredient_sections
-  FOR ALL USING (
+-- Authenticated users can create sections
+CREATE POLICY "Authenticated recipe creators can create sections" ON recipe_ingredient_sections
+  FOR INSERT WITH CHECK (
+    is_recipe_creator(recipe_ingredient_sections.recipe_id, auth.uid())
+  );
+
+-- Only recipe creators can update sections
+CREATE POLICY "Recipe creators can update sections" ON recipe_ingredient_sections
+  FOR UPDATE USING (
+    is_recipe_creator(recipe_ingredient_sections.recipe_id, auth.uid())
+  ) WITH CHECK (
     is_recipe_creator(recipe_ingredient_sections.recipe_id, auth.uid())
   );
 
@@ -304,9 +302,17 @@ CREATE POLICY "Users can view recipe ingredients" ON recipe_ingredients
     )
   );
 
--- Recipe creators can manage ingredients
-CREATE POLICY "Recipe creators can manage ingredients" ON recipe_ingredients
-  FOR ALL USING (
+-- Authenticated users can create ingredients
+CREATE POLICY "Authenticated recipe creators can create ingredients" ON recipe_ingredients
+  FOR INSERT WITH CHECK (
+    is_recipe_creator(recipe_ingredients.recipe_id, auth.uid())
+  );
+
+-- Only recipe creators can update ingredients
+CREATE POLICY "Recipe creators can update ingredients" ON recipe_ingredients
+  FOR UPDATE USING (
+    is_recipe_creator(recipe_ingredients.recipe_id, auth.uid())
+  ) WITH CHECK (
     is_recipe_creator(recipe_ingredients.recipe_id, auth.uid())
   );
 
@@ -324,9 +330,17 @@ CREATE POLICY "Users can view recipe steps" ON recipe_steps
     )
   );
 
--- Recipe creators can manage steps
-CREATE POLICY "Recipe creators can manage steps" ON recipe_steps
-  FOR ALL USING (
+-- Authenticated users can create steps
+CREATE POLICY "Authenticated recipe creators can create steps" ON recipe_steps
+  FOR INSERT WITH CHECK (
+    is_recipe_creator(recipe_steps.recipe_id, auth.uid())
+  );
+
+-- Only recipe creators can update steps
+CREATE POLICY "Recipe creators can update steps" ON recipe_steps
+  FOR UPDATE USING (
+    is_recipe_creator(recipe_steps.recipe_id, auth.uid())
+  ) WITH CHECK (
     is_recipe_creator(recipe_steps.recipe_id, auth.uid())
   );
 
