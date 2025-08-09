@@ -1,25 +1,25 @@
-Neuen Bucket anlegen: "recipes" und als public einstellen
+Neuen Bucket anlegen: "public-bucket" und als public einstellen
 
 In SQL Editor ausführen:
 
 
 -- Lesen für alle (falls noch nicht vorhanden)
-create policy "Public read for recipes"
+create policy "Public read for public-bucket"
 on storage.objects for select
-using (bucket_id = 'recipes');
+using (bucket_id = 'public-bucket');
 
 -- Upload nur für angemeldete Nutzer
-create policy "Authenticated users can upload recipes"
+create policy "Authenticated users can upload public-bucket"
 on storage.objects for insert to authenticated
-with check (bucket_id = 'recipes');
+with check (bucket_id = 'public-bucket');
 
 -- Optional: Eigene Dateien aktualisieren
-create policy "Users can update own recipes objects"
+create policy "Users can update own public-bucket objects"
 on storage.objects for update to authenticated
-using (bucket_id = 'recipes' and owner = auth.uid())
-with check (bucket_id = 'recipes' and owner = auth.uid());
+using (bucket_id = 'public-bucket' and owner = auth.uid())
+with check (bucket_id = 'public-bucket' and owner = auth.uid());
 
 -- Optional: Eigene Dateien löschen
-create policy "Users can delete own recipes objects"
+create policy "Users can delete own public-bucket objects"
 on storage.objects for delete to authenticated
-using (bucket_id = 'recipes' and owner = auth.uid());
+using (bucket_id = 'public-bucket' and owner = auth.uid());
