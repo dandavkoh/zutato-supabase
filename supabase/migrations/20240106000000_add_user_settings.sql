@@ -77,3 +77,60 @@ DROP TRIGGER IF EXISTS on_auth_user_created_create_settings ON auth.users;
 CREATE TRIGGER on_auth_user_created_create_settings
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION create_user_settings_for_new_user();
+
+-- =====================================================
+-- PUBLIC USER NICKNAMES (READABLE BY EVERYONE)
+-- =====================================================
+-- Publicly readable table exposing only user_id and nickname
+-- Data is synced from user_settings via trigger to keep privacy intact
+
+-- Table with only public fields
+CREATE TABLE public_user_nicknames (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  nickname TEXT UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE public_user_nicknames ENABLE ROW LEVEL SECURITY;
+
+-- Everyone can read nicknames
+CREATE POLICY "Everyone can read public_user_nicknames" ON public_user_nicknames
+  FOR SELECT USING (true);
+
+-- Timestamp trigger for public_user_nicknames
+CREATE TRIGGER update_public_user_nicknames_updated_at BEFORE UPDATE ON public_user_nicknames
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Sync trigger from user_settings -> public_user_nicknames
+CREATE OR REPLACE FUNCTION sync_public_nickname_from_settings()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public_user_nicknames (user_id, nickname)
+  VALUES (NEW.user_id, NEW.nickname)
+  ON CONFLICT (user_id) DO UPDATE
+    SET nickname = EXCLUDED.nickname,
+        updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Apply trigger after insert/update on user_settings
+DROP TRIGGER IF EXISTS trg_sync_public_nickname_from_settings_ins ON user_settings;
+CREATE TRIGGER trg_sync_public_nickname_from_settings_ins
+AFTER INSERT ON user_settings
+FOR EACH ROW EXECUTE FUNCTION sync_public_nickname_from_settings();
+
+DROP TRIGGER IF EXISTS trg_sync_public_nickname_from_settings_upd ON user_settings;
+CREATE TRIGGER trg_sync_public_nickname_from_settings_upd
+AFTER UPDATE OF nickname ON user_settings
+FOR EACH ROW EXECUTE FUNCTION sync_public_nickname_from_settings();
+
+-- Backfill existing data
+INSERT INTO public_user_nicknames (user_id, nickname)
+SELECT us.user_id, us.nickname
+FROM user_settings us
+ON CONFLICT (user_id) DO UPDATE
+SET nickname = EXCLUDED.nickname,
+    updated_at = NOW();
