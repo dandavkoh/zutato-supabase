@@ -15,8 +15,8 @@
 CREATE TABLE user_settings (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   nickname TEXT UNIQUE,
-  show_ads BOOLEAN NOT NULL DEFAULT TRUE,
-  feature_flags JSONB NOT NULL DEFAULT '{}',
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  feature_flags JSONB NOT NULL DEFAULT '{"is_pro_user": false}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -25,7 +25,7 @@ CREATE TABLE user_settings (
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
 -- Indexes
-CREATE INDEX idx_user_settings_show_ads ON user_settings(show_ads);
+CREATE INDEX idx_user_settings_is_admin ON user_settings(is_admin);
 CREATE INDEX idx_user_settings_nickname ON user_settings(nickname);
 CREATE INDEX idx_user_settings_feature_flags_gin ON user_settings USING gin(feature_flags);
 
