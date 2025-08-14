@@ -69,6 +69,8 @@ CREATE TABLE recipes (
   cooking_time_minutes INTEGER,
   resting_time_minutes INTEGER,
   image_url TEXT,
+  -- Full-text search vector on recipe name
+  fts tsvector GENERATED ALWAYS AS (to_tsvector('german', name)) STORED,
   created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -161,6 +163,10 @@ CREATE INDEX idx_recipes_category_id ON recipes(category_id);
 CREATE INDEX idx_recipes_is_deleted ON recipes(is_deleted);
 CREATE INDEX idx_recipes_created_at ON recipes(created_at);
 CREATE INDEX idx_recipes_difficulty ON recipes(difficulty);
+-- Full-text search index
+CREATE INDEX idx_recipes_fts ON recipes USING gin(fts);
+-- Trigram index for fuzzy search on name
+CREATE INDEX idx_recipes_name_trgm ON recipes USING gin(name gin_trgm_ops);
 
 -- Recipe ingredient section indexes
 CREATE INDEX idx_recipe_ingredient_sections_recipe_id ON recipe_ingredient_sections(recipe_id);
@@ -181,6 +187,58 @@ CREATE INDEX idx_recipe_steps_step_number ON recipe_steps(step_number);
 -- =====================================================
 -- HELPER FUNCTIONS - Recipe ownership and access
 -- =====================================================
+
+-- Hybrid search for recipes by name with normalized ranking
+CREATE OR REPLACE FUNCTION search_recipes(
+  term text,
+  limit_fts int default 10,
+  limit_fuzzy int default 10
+)
+RETURNS TABLE(
+  id uuid,
+  name text,
+  category_id uuid,
+  rank double precision,
+  src text
+) 
+LANGUAGE plpgsql 
+STABLE 
+AS $$
+BEGIN
+  RETURN QUERY
+  (
+    -- 1. Fast full-text search matches (normalized with trigram)
+    SELECT 
+      r.id,
+      r.name,
+      r.category_id,
+      GREATEST(similarity(r.name, term), ts_rank(r.fts, q.ts))::double precision as rank,
+      'fts'::text as src
+    FROM recipes r,
+         (SELECT websearch_to_tsquery('german', term || ':*') ts) q
+    WHERE r.is_deleted = FALSE
+      AND r.fts @@ q.ts
+    ORDER BY rank DESC
+    LIMIT limit_fts
+  )
+  UNION ALL
+  (
+    -- 2. Trigram fallback (exclude FTS duplicates)
+    SELECT 
+      r.id,
+      r.name,
+      r.category_id,
+      similarity(r.name, term)::double precision as rank,
+      'fuzzy'::text as src
+    FROM recipes r
+    WHERE r.is_deleted = FALSE
+      AND r.name % term
+      AND NOT r.fts @@ websearch_to_tsquery('german', term || ':*')
+    ORDER BY rank DESC
+    LIMIT limit_fuzzy
+  );
+END;
+$$;
 
 -- Check if a user is the creator of a specific recipe
 CREATE OR REPLACE FUNCTION is_recipe_creator(recipe_uuid UUID, user_uuid UUID)
