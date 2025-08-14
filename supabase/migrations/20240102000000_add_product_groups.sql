@@ -820,7 +820,7 @@ BEGIN
       pg.title, 
       pg.default_icon,
       pg.default_category_id,
-      ts_rank(pg.fts, q.ts)::double precision as rank, 
+      GREATEST(similarity(pg.title, term), ts_rank(pg.fts, q.ts))::double precision as rank, 
       'fts'::text as src
     FROM product_groups pg, 
          (SELECT websearch_to_tsquery('german', term || ':*') ts) q
@@ -937,7 +937,7 @@ BEGIN
       pg.title, 
       pg.default_icon as icon,
       pg.default_category_id as category_id,
-      ts_rank(pg.fts, q.ts)::double precision as rank, 
+      GREATEST(similarity(pg.title, term), ts_rank(pg.fts, q.ts))::double precision as rank, 
       'fts'::text as src,
       'group'::text as type
     FROM product_groups pg, 
@@ -954,7 +954,7 @@ BEGIN
       p.title, 
       p.default_icon as icon,
       p.default_category_id as category_id,
-      ts_rank(p.fts, q.ts)::double precision as rank, 
+      GREATEST(similarity(p.title, term), ts_rank(p.fts, q.ts))::double precision as rank, 
       'fts'::text as src,
       'product'::text as type
     FROM products p, 
