@@ -346,6 +346,12 @@ CREATE POLICY "Recipe creators can update sections" ON recipe_ingredient_section
     is_recipe_creator(recipe_ingredient_sections.recipe_id, auth.uid())
   );
 
+-- Only recipe creators can delete sections
+CREATE POLICY "Recipe creators can delete sections" ON recipe_ingredient_sections
+  FOR DELETE USING (
+    is_recipe_creator(recipe_ingredient_sections.recipe_id, auth.uid())
+  );
+
 -- =====================================================
 -- RECIPE_INGREDIENTS POLICIES
 -- =====================================================
@@ -374,6 +380,12 @@ CREATE POLICY "Recipe creators can update ingredients" ON recipe_ingredients
     is_recipe_creator(recipe_ingredients.recipe_id, auth.uid())
   );
 
+-- Only recipe creators can delete ingredients
+CREATE POLICY "Recipe creators can delete ingredients" ON recipe_ingredients
+  FOR DELETE USING (
+    is_recipe_creator(recipe_ingredients.recipe_id, auth.uid())
+  );
+
 -- =====================================================
 -- RECIPE_STEPS POLICIES
 -- =====================================================
@@ -399,6 +411,12 @@ CREATE POLICY "Recipe creators can update steps" ON recipe_steps
   FOR UPDATE USING (
     is_recipe_creator(recipe_steps.recipe_id, auth.uid())
   ) WITH CHECK (
+    is_recipe_creator(recipe_steps.recipe_id, auth.uid())
+  );
+
+-- Only recipe creators can delete steps
+CREATE POLICY "Recipe creators can delete steps" ON recipe_steps
+  FOR DELETE USING (
     is_recipe_creator(recipe_steps.recipe_id, auth.uid())
   );
 
