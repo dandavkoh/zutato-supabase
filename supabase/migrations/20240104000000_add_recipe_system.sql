@@ -517,6 +517,36 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================================
+-- STORAGE: PUBLIC BUCKET FOR ASSETS
+-- =====================================================
+
+-- Create a public bucket for publicly accessible assets (e.g., images)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('public-bucket', 'public-bucket', TRUE)
+ON CONFLICT (id) DO NOTHING;
+
+-- Lesen für alle (falls noch nicht vorhanden)
+CREATE POLICY "Public read for public-bucket"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'public-bucket');
+
+-- Upload nur für angemeldete Nutzer
+CREATE POLICY "Authenticated users can upload public-bucket"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'public-bucket');
+
+-- Eigene Dateien aktualisieren
+CREATE POLICY "Users can update own public-bucket objects"
+ON storage.objects FOR UPDATE TO authenticated
+USING (bucket_id = 'public-bucket' AND owner = auth.uid())
+WITH CHECK (bucket_id = 'public-bucket' AND owner = auth.uid());
+
+-- Eigene Dateien löschen
+CREATE POLICY "Users can delete own public-bucket objects"
+ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'public-bucket' AND owner = auth.uid());
+
+-- =====================================================
 -- MIGRATION COMPLETE
 -- =====================================================
 -- 
