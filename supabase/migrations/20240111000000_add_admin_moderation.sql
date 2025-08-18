@@ -307,6 +307,104 @@ BEGIN
     EXECUTE 'CREATE POLICY "Admins can update content_reports" ON public.content_reports FOR UPDATE USING (current_user_is_admin()) WITH CHECK (current_user_is_admin())';
   END IF;
 END$$;
+
+-- =====================================================
+-- ADMIN OVERRIDES FOR RECIPE SUBTABLES (SECTIONS, INGREDIENTS, STEPS)
+-- =====================================================
+
+-- recipe_ingredient_sections
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredient_sections' AND policyname = 'Admins can insert recipe sections'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can insert recipe sections" ON public.recipe_ingredient_sections FOR INSERT WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredient_sections' AND policyname = 'Admins can update recipe sections'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can update recipe sections" ON public.recipe_ingredient_sections FOR UPDATE USING (current_user_is_admin()) WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredient_sections' AND policyname = 'Admins can delete recipe sections'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can delete recipe sections" ON public.recipe_ingredient_sections FOR DELETE USING (current_user_is_admin())';
+  END IF;
+END$$;
+
+-- recipe_ingredients
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredients' AND policyname = 'Admins can insert recipe ingredients'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can insert recipe ingredients" ON public.recipe_ingredients FOR INSERT WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredients' AND policyname = 'Admins can update recipe ingredients'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can update recipe ingredients" ON public.recipe_ingredients FOR UPDATE USING (current_user_is_admin()) WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_ingredients' AND policyname = 'Admins can delete recipe ingredients'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can delete recipe ingredients" ON public.recipe_ingredients FOR DELETE USING (current_user_is_admin())';
+  END IF;
+END$$;
+
+-- recipe_steps
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_steps' AND policyname = 'Admins can insert recipe steps'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can insert recipe steps" ON public.recipe_steps FOR INSERT WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_steps' AND policyname = 'Admins can update recipe steps'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can update recipe steps" ON public.recipe_steps FOR UPDATE USING (current_user_is_admin()) WITH CHECK (current_user_is_admin())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'recipe_steps' AND policyname = 'Admins can delete recipe steps'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can delete recipe steps" ON public.recipe_steps FOR DELETE USING (current_user_is_admin())';
+  END IF;
+END$$;
+
 -- =====================================================
 -- MIGRATION COMPLETE
 -- =====================================================
