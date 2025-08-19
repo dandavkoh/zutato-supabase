@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS content_reports (
   forum_thread_id UUID REFERENCES forum_threads(id) ON DELETE CASCADE,
   forum_post_id UUID REFERENCES forum_posts(id) ON DELETE CASCADE,
   blog_comment_id UUID REFERENCES blog_comments(id) ON DELETE CASCADE,
+  profile_user_id UUID REFERENCES public_user_profile(user_id) ON DELETE CASCADE,
   reported_by UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   reason TEXT NOT NULL,
   details TEXT,
@@ -182,7 +183,8 @@ CREATE TABLE IF NOT EXISTS content_reports (
     (user_message_id IS NOT NULL)::int +
     (forum_thread_id IS NOT NULL)::int +
     (forum_post_id IS NOT NULL)::int +
-    (blog_comment_id IS NOT NULL)::int = 1
+    (blog_comment_id IS NOT NULL)::int +
+    (profile_user_id IS NOT NULL)::int = 1
   )
 );
 
@@ -199,6 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_content_reports_user_message_id ON content_report
 CREATE INDEX IF NOT EXISTS idx_content_reports_forum_thread_id ON content_reports(forum_thread_id);
 CREATE INDEX IF NOT EXISTS idx_content_reports_forum_post_id ON content_reports(forum_post_id);
 CREATE INDEX IF NOT EXISTS idx_content_reports_blog_comment_id ON content_reports(blog_comment_id);
+CREATE INDEX IF NOT EXISTS idx_content_reports_profile_user_id ON content_reports(profile_user_id);
 
 -- Prevent duplicate active reports per user per target
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_report_per_user_recipe
@@ -224,6 +227,10 @@ WHERE forum_post_id IS NOT NULL AND is_deleted = FALSE;
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_report_per_user_blog_comment
 ON content_reports(blog_comment_id, reported_by)
 WHERE blog_comment_id IS NOT NULL AND is_deleted = FALSE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_report_per_user_profile
+ON content_reports(profile_user_id, reported_by)
+WHERE profile_user_id IS NOT NULL AND is_deleted = FALSE;
 
 -- Triggers
 DO $$
@@ -292,6 +299,10 @@ BEGIN
         JOIN blog_posts bp ON bp.id = bc.post_id
         WHERE bc.id = blog_comment_id AND bc.is_deleted = FALSE AND bp.is_deleted = FALSE
           AND bp.status = ''published'' AND (bp.published_at IS NULL OR bp.published_at <= NOW())
+      )) OR
+      (profile_user_id IS NOT NULL AND EXISTS (
+         SELECT 1 FROM public_user_profile pup
+         WHERE pup.user_id = profile_user_id
       ))
     )
   )';
