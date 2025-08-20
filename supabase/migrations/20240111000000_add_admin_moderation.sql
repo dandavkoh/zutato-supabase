@@ -417,6 +417,30 @@ BEGIN
 END$$;
 
 -- =====================================================
+-- ADMIN OVERRIDES FOR RECIPE_CATEGORIES_MAP (M:N mapping)
+-- =====================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'recipe_categories_map' AND policyname = 'Admins can insert recipe_categories_map'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can insert recipe_categories_map" ON public.recipe_categories_map FOR INSERT WITH CHECK (current_user_is_admin() AND created_by = auth.uid())';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'recipe_categories_map' AND policyname = 'Admins can delete recipe_categories_map'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Admins can delete recipe_categories_map" ON public.recipe_categories_map FOR DELETE USING (current_user_is_admin())';
+  END IF;
+END$$;
+
+-- =====================================================
 -- MIGRATION COMPLETE
 -- =====================================================
 -- ✅ Admins can edit/soft-delete recipes and recipe comments
