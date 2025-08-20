@@ -148,6 +148,7 @@ CREATE TABLE forum_posts (
   thread_id UUID REFERENCES forum_threads(id) ON DELETE CASCADE NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   content TEXT NOT NULL,
+  parent_post_id UUID REFERENCES forum_posts(id) ON DELETE CASCADE,
   is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
   deleted_at TIMESTAMP WITH TIME ZONE,
   deleted_by UUID REFERENCES auth.users(id),
@@ -163,6 +164,7 @@ CREATE INDEX idx_forum_posts_thread_id ON forum_posts(thread_id);
 CREATE INDEX idx_forum_posts_user_id ON forum_posts(user_id);
 CREATE INDEX idx_forum_posts_is_deleted ON forum_posts(is_deleted);
 CREATE INDEX idx_forum_posts_created_at ON forum_posts(created_at);
+CREATE INDEX idx_forum_posts_parent_post_id ON forum_posts(parent_post_id);
 CREATE INDEX idx_forum_posts_fts ON forum_posts USING gin(fts);
 
 -- Triggers
@@ -184,6 +186,74 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER forum_posts_after_insert
 AFTER INSERT ON forum_posts
 FOR EACH ROW EXECUTE FUNCTION forum_posts_after_insert_update_thread_stats();
+
+-- =====================================================
+-- VOTES: forum_threads and forum_posts
+-- =====================================================
+
+-- Upvotes for threads
+CREATE TABLE forum_thread_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  thread_id UUID REFERENCES forum_threads(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(thread_id, user_id)
+);
+
+ALTER TABLE forum_thread_votes ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX idx_forum_thread_votes_thread_id ON forum_thread_votes(thread_id);
+CREATE INDEX idx_forum_thread_votes_user_id ON forum_thread_votes(user_id);
+CREATE INDEX idx_forum_thread_votes_created_at ON forum_thread_votes(created_at);
+
+CREATE TRIGGER update_forum_thread_votes_updated_at BEFORE UPDATE ON forum_thread_votes
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE POLICY "Everyone can read forum_thread_votes" ON forum_thread_votes
+  FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can create forum_thread_votes" ON forum_thread_votes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own forum_thread_votes" ON forum_thread_votes
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own forum_thread_votes" ON forum_thread_votes
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Upvotes for posts
+CREATE TABLE forum_post_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  post_id UUID REFERENCES forum_posts(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(post_id, user_id)
+);
+
+ALTER TABLE forum_post_votes ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX idx_forum_post_votes_post_id ON forum_post_votes(post_id);
+CREATE INDEX idx_forum_post_votes_user_id ON forum_post_votes(user_id);
+CREATE INDEX idx_forum_post_votes_created_at ON forum_post_votes(created_at);
+
+CREATE TRIGGER update_forum_post_votes_updated_at BEFORE UPDATE ON forum_post_votes
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE POLICY "Everyone can read forum_post_votes" ON forum_post_votes
+  FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can create forum_post_votes" ON forum_post_votes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own forum_post_votes" ON forum_post_votes
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own forum_post_votes" ON forum_post_votes
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- RLS
 -- Public can read visible posts in visible threads

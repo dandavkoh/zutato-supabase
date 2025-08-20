@@ -161,6 +161,7 @@ CREATE TABLE blog_comments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   post_id UUID REFERENCES blog_posts(id) ON DELETE CASCADE NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  parent_comment_id UUID REFERENCES blog_comments(id) ON DELETE CASCADE,
   comment TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -177,6 +178,7 @@ CREATE INDEX idx_blog_comments_post_id ON blog_comments(post_id);
 CREATE INDEX idx_blog_comments_user_id ON blog_comments(user_id);
 CREATE INDEX idx_blog_comments_is_deleted ON blog_comments(is_deleted);
 CREATE INDEX idx_blog_comments_created_at ON blog_comments(created_at);
+CREATE INDEX idx_blog_comments_parent_comment_id ON blog_comments(parent_comment_id);
 
 -- Triggers
 CREATE TRIGGER update_blog_comments_updated_at BEFORE UPDATE ON blog_comments
@@ -240,6 +242,50 @@ BEGIN
   WHERE id = comment_uuid;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- TABLE: blog_comment_votes (upvotes for blog comments)
+-- =====================================================
+
+CREATE TABLE blog_comment_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  comment_id UUID REFERENCES blog_comments(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(comment_id, user_id)
+);
+
+-- Enable Row Level Security
+ALTER TABLE blog_comment_votes ENABLE ROW LEVEL SECURITY;
+
+-- Indexes
+CREATE INDEX idx_blog_comment_votes_comment_id ON blog_comment_votes(comment_id);
+CREATE INDEX idx_blog_comment_votes_user_id ON blog_comment_votes(user_id);
+CREATE INDEX idx_blog_comment_votes_created_at ON blog_comment_votes(created_at);
+
+-- Triggers
+CREATE TRIGGER update_blog_comment_votes_updated_at BEFORE UPDATE ON blog_comment_votes
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS Policies
+
+-- Everyone can read votes
+CREATE POLICY "Everyone can read blog_comment_votes" ON blog_comment_votes
+  FOR SELECT USING (true);
+
+-- Only authenticated users can create votes; user_id must match auth.uid()
+CREATE POLICY "Authenticated users can create blog_comment_votes" ON blog_comment_votes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Only the owner can update their vote
+CREATE POLICY "Users can update own blog_comment_votes" ON blog_comment_votes
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Only the owner can delete their vote
+CREATE POLICY "Users can delete own blog_comment_votes" ON blog_comment_votes
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- =====================================================
 -- OPTIONAL VIEW: Public posts (convenient access)

@@ -118,6 +118,7 @@ CREATE TABLE recipe_comments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   recipe_id UUID REFERENCES recipes(id) ON DELETE CASCADE NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  parent_comment_id UUID REFERENCES recipe_comments(id) ON DELETE CASCADE,
   comment TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -134,6 +135,7 @@ CREATE INDEX idx_recipe_comments_recipe_id ON recipe_comments(recipe_id);
 CREATE INDEX idx_recipe_comments_user_id ON recipe_comments(user_id);
 CREATE INDEX idx_recipe_comments_is_deleted ON recipe_comments(is_deleted);
 CREATE INDEX idx_recipe_comments_created_at ON recipe_comments(created_at);
+CREATE INDEX idx_recipe_comments_parent_comment_id ON recipe_comments(parent_comment_id);
 
 -- Triggers
 CREATE TRIGGER update_recipe_comments_updated_at BEFORE UPDATE ON recipe_comments
@@ -187,3 +189,47 @@ BEGIN
   WHERE id = comment_uuid;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- TABLE: recipe_comment_votes (upvotes for recipe comments)
+-- =====================================================
+
+CREATE TABLE recipe_comment_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  comment_id UUID REFERENCES recipe_comments(id) ON DELETE CASCADE NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(comment_id, user_id)
+);
+
+-- Enable Row Level Security
+ALTER TABLE recipe_comment_votes ENABLE ROW LEVEL SECURITY;
+
+-- Indexes
+CREATE INDEX idx_recipe_comment_votes_comment_id ON recipe_comment_votes(comment_id);
+CREATE INDEX idx_recipe_comment_votes_user_id ON recipe_comment_votes(user_id);
+CREATE INDEX idx_recipe_comment_votes_created_at ON recipe_comment_votes(created_at);
+
+-- Triggers
+CREATE TRIGGER update_recipe_comment_votes_updated_at BEFORE UPDATE ON recipe_comment_votes
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS Policies
+
+-- Everyone can read votes
+CREATE POLICY "Everyone can read recipe_comment_votes" ON recipe_comment_votes
+  FOR SELECT USING (true);
+
+-- Only authenticated users can create votes; user_id must match auth.uid()
+CREATE POLICY "Authenticated users can create recipe_comment_votes" ON recipe_comment_votes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Only the owner can update their vote (not usually needed, future-proof)
+CREATE POLICY "Users can update own recipe_comment_votes" ON recipe_comment_votes
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- Only the owner can delete their vote (withdraw)
+CREATE POLICY "Users can delete own recipe_comment_votes" ON recipe_comment_votes
+  FOR DELETE USING (auth.uid() = user_id);
