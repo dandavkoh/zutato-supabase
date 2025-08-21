@@ -16,21 +16,39 @@
 -- =====================================================
 
 -- =====================================================
--- 1. RECIPE_CATEGORIES TABLE - Recipe categories
+-- 1. RECIPE CATEGORY GROUPS + CATEGORIES
 -- =====================================================
--- Similar to grocery_categories but for recipes
--- Read-only for normal users, managed by admins
+-- Read-only for normal users (seeded by migration), used to group categories
 
-CREATE TABLE recipe_categories (
+CREATE TABLE recipe_category_groups (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  icon TEXT DEFAULT 'utensils',
+  icon TEXT DEFAULT 'folder',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  parent_group_id UUID REFERENCES recipe_category_groups(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable Row Level Security for data protection
+ALTER TABLE recipe_category_groups ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Everyone can read recipe_category_groups" ON recipe_category_groups
+  FOR SELECT USING (true);
+
+-- Categories belong to exactly one group; optional parent within same table
+CREATE TABLE recipe_categories (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  group_id UUID NOT NULL REFERENCES recipe_category_groups(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  parent_category_id UUID REFERENCES recipe_categories(id) ON DELETE SET NULL,
+  icon TEXT DEFAULT 'utensils',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (group_id, name)
+);
+
 ALTER TABLE recipe_categories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Everyone can read recipe_categories" ON recipe_categories
+  FOR SELECT USING (true);
 
 -- ======================================================
 -- 1a. RECIPE_UNITS TABLE - Measurement units for recipes
@@ -64,7 +82,6 @@ CREATE TABLE recipes (
   description TEXT,
   portions INTEGER NOT NULL DEFAULT 1,
   difficulty TEXT CHECK (difficulty IN ('einfach', 'mittel', 'schwer')) DEFAULT 'mittel',
-  category_id UUID REFERENCES recipe_categories(id),
   working_time_minutes INTEGER,
   cooking_time_minutes INTEGER,
   resting_time_minutes INTEGER,
@@ -81,6 +98,51 @@ CREATE TABLE recipes (
 
 -- Enable Row Level Security for data protection
 ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
+
+-- =====================================================
+-- 2a. RECIPE_CATEGORIES_MAP TABLE - Many-to-many between recipes and categories
+-- =====================================================
+-- A recipe can have zero or more recipe_categories
+
+CREATE TABLE recipe_categories_map (
+  recipe_id UUID REFERENCES recipes(id) ON DELETE CASCADE NOT NULL,
+  category_id UUID REFERENCES recipe_categories(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_by UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  PRIMARY KEY (recipe_id, category_id)
+);
+
+ALTER TABLE recipe_categories_map ENABLE ROW LEVEL SECURITY;
+
+-- RLS: read if recipe visible; write only by recipe creator
+CREATE POLICY "Everyone can read recipe_categories_map" ON recipe_categories_map
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM recipes r
+      WHERE r.id = recipe_categories_map.recipe_id
+        AND r.is_deleted = FALSE
+    )
+  );
+
+CREATE POLICY "Recipe creators can insert recipe_categories_map" ON recipe_categories_map
+  FOR INSERT WITH CHECK (
+    created_by = auth.uid() AND EXISTS (
+      SELECT 1 FROM recipes r
+      WHERE r.id = recipe_categories_map.recipe_id AND r.created_by = auth.uid()
+    )
+  );
+
+CREATE POLICY "Recipe creators can delete recipe_categories_map" ON recipe_categories_map
+  FOR DELETE USING (
+    EXISTS (
+      SELECT 1 FROM recipes r
+      WHERE r.id = recipe_categories_map.recipe_id AND r.created_by = auth.uid()
+    )
+  );
+
+-- Indexes for mapping
+CREATE INDEX idx_recipe_categories_map_recipe_id ON recipe_categories_map(recipe_id);
+CREATE INDEX idx_recipe_categories_map_category_id ON recipe_categories_map(category_id);
 
 -- =====================================================
 -- 3. RECIPE_INGREDIENT_SECTIONS TABLE - Ingredient sections
@@ -159,7 +221,6 @@ ALTER TABLE recipe_steps ENABLE ROW LEVEL SECURITY;
 
 -- Recipe indexes
 CREATE INDEX idx_recipes_created_by ON recipes(created_by);
-CREATE INDEX idx_recipes_category_id ON recipes(category_id);
 CREATE INDEX idx_recipes_is_deleted ON recipes(is_deleted);
 CREATE INDEX idx_recipes_created_at ON recipes(created_at);
 CREATE INDEX idx_recipes_difficulty ON recipes(difficulty);
@@ -197,7 +258,6 @@ CREATE OR REPLACE FUNCTION search_recipes(
 RETURNS TABLE(
   id uuid,
   name text,
-  category_id uuid,
   rank double precision,
   src text
 ) 
@@ -211,7 +271,6 @@ BEGIN
     SELECT 
       r.id,
       r.name,
-      r.category_id,
       GREATEST(similarity(r.name, term), ts_rank(r.fts, q.ts))::double precision as rank,
       'fts'::text as src
     FROM recipes r,
@@ -227,7 +286,6 @@ BEGIN
     SELECT 
       r.id,
       r.name,
-      r.category_id,
       similarity(r.name, term)::double precision as rank,
       'fuzzy'::text as src
     FROM recipes r
@@ -287,16 +345,6 @@ CREATE POLICY "Everyone can read recipe_units" ON recipe_units
   FOR SELECT USING (true);
 
 -- No write policies for recipe_units to enforce read-only access
-
--- =====================================================
--- RECIPE_CATEGORIES POLICIES (Read-only for normal users)
--- =====================================================
-
--- Everyone can read recipe categories
-CREATE POLICY "Everyone can read recipe_categories" ON recipe_categories
-  FOR SELECT USING (true);
-
--- No write policies for recipe_categories to enforce read-only access
 
 -- =====================================================
 -- RECIPES POLICIES
@@ -465,47 +513,220 @@ INSERT INTO recipe_units (name, short_name) VALUES
   ('Tuben', 'Tuben')
 ON CONFLICT (name) DO NOTHING;
 
--- Insert default recipe categories
-INSERT INTO recipe_categories (name, icon) VALUES
-  ('Hauptspeise', 'utensils'),
-  ('Vorspeise', 'cheese'),
-  ('Suppe', 'bowl-hot'),
-  ('Salat', 'leaf'),
-  ('Beilage', 'carrot'),
-  ('Dessert', 'ice-cream'),
-  ('Kuchen', 'birthday-cake'),
-  ('Brot & Gebäck', 'bread-slice'),
-  ('Frühstück', 'coffee'),
-  ('Snack', 'cookie-bite'),
-  ('Getränk', 'wine-glass'),
-  ('Likör', 'wine-bottle'),
-  ('Smoothie', 'glass-whiskey'),
-  ('Dip & Sauce', 'jar'),
-  ('Marmelade & Konfitüre', 'jar-wheat'),
-  ('Eingelegtes', 'jar-wheat'),
-  ('Weihnachtsgebäck', 'star'),
-  ('Ostergebäck', 'egg'),
-  ('Party & Buffet', 'users'),
-  ('Vegetarisch', 'seedling'),
-  ('Vegan', 'leaf'),
-  ('Glutenfrei', 'wheat-awn-slash'),
-  ('Laktosefrei', 'milk'),
-  ('Low Carb', 'scale-balanced'),
-  ('Keto', 'drumstick-bite'),
-  ('Diät', 'weight-scale'),
-  ('Kinderfreundlich', 'baby'),
-  ('Schnell & Einfach', 'clock'),
-  ('Slow Food', 'hourglass-half'),
-  ('Grillen', 'fire'),
-  ('Picknick', 'basket-shopping'),
-  ('Festtagsmenü', 'crown'),
-  ('International', 'globe'),
-  ('Regionale Küche', 'map-marker-alt'),
-  ('Hausmannskost', 'home'),
-  ('Gourmet', 'star'),
-  ('Basisrezepte', 'book'),
-  ('Resteverwertung', 'recycle')
+-- Insert default recipe category groups
+INSERT INTO recipe_category_groups (name, icon, sort_order) VALUES
+  ('Backen & Süßspeisen', 'cake', 1),
+  ('Regional', 'globe', 2),
+  ('Zubereitungsarten', 'utensils', 3),
+  ('Getränke', 'wine-glass', 4),
+  ('Saisonal', 'calendar', 5),
+  ('Menüart', 'plate-wheat', 6),
+  ('Spezielles', 'star', 7)
 ON CONFLICT (name) DO NOTHING;
+
+-- Backen & Süßspeisen
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Backen & Süßspeisen')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'utensils' FROM g
+JOIN (VALUES
+  ('Brot und Brötchen'),
+  ('Cremes'),
+  ('Eis'),
+  ('Kekse & Plätzchen'),
+  ('Konfiserie'),
+  ('Kuchen'),
+  ('Tarte/Quiche'),
+  ('Torten')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Getränke
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Getränke')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'wine-glass' FROM g
+JOIN (VALUES
+  ('Bowle'),
+  ('Cocktail'),
+  ('Kaffee, Tee & Kakao'),
+  ('Likör'),
+  ('Punsch'),
+  ('Shake')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Getränke -> Unterkategorien von Cocktail
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Getränke' AND c.name = 'Cocktail'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'wine-glass' FROM base
+JOIN (VALUES('Alkoholfrei'),('Longdrink')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Saisonal
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Saisonal')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'calendar' FROM g
+JOIN (VALUES
+  ('Frühling'),('Halloween'),('Herbst'),('Ostern'),('Silvester'),('Sommer'),('Weihnachten'),('Winter')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Zubereitungsarten (Hauptliste)
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Zubereitungsarten')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'utensils' FROM g
+JOIN (VALUES
+  ('Aufstrich'),('Backen'),('Beilage'),('Brotspeise'),('Eierspeise'),('Eintopf'),('Fisch'),('Frucht'),('Frühstück'),('Gemüse'),
+  ('Gewürze/Öl/Essig/Pasten'),('Grundrezepte'),('Haltbarmachen'),('Krustentier & Muscheln'),('Käse'),('Mehlspeisen'),('Methoden'),
+  ('Pasta'),('Saucen'),('Snacks und kleine Gerichte'),('Süßspeisen')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Zubereitungsarten -> Methoden Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Zubereitungsarten' AND c.name = 'Methoden'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'utensils' FROM base
+JOIN (VALUES
+  ('Auflauf'),('Barbecue & Grill'),('Blanchieren'),('Braten'),('Dünsten'),('Flambieren'),('Fondue'),('Frittieren'),('Kochen'),
+  ('Marinieren'),('Mikrowelle'),('Molekularküche'),('Römertopf'),('Schmoren'),('Wok'),('Überbacken')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart (Hauptkategorien)
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Menüart')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'plate-wheat' FROM g
+JOIN (VALUES('Beilage'),('Dessert'),('Frühstück'),('Hauptspeise'),('Salat'),('Suppen'),('Vorspeisen')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart -> Beilage Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Menüart' AND c.name = 'Beilage'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'plate-wheat' FROM base
+JOIN (VALUES('Gemüse'),('Hülsenfrüchte'),('Kartoffeln'),('Klöße'),('Nudeln'),('Reis/Getreide')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart -> Hauptspeise Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Menüart' AND c.name = 'Hauptspeise'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'plate-wheat' FROM base
+JOIN (VALUES
+  ('Eier'),('Eintopf'),('Fisch'),('Geflügel'),('Gemüse'),('Hülsenfrüchte'),('Innereien'),('Kartoffeln'),
+  ('Krustentier & Muscheln'),('Lamm & Ziege'),('Pasta & Nudel'),('Pilze'),('Pizza'),('Reis/Getreide'),
+  ('Rind'),('Schwein'),('Wild & Kaninchen')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart -> Salat Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Menüart' AND c.name = 'Salat'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'plate-wheat' FROM base
+JOIN (VALUES
+  ('Eier & Käse'),('Fleisch & Wurst'),('Früchte'),('Gemüse'),('Kartoffel'),('Krustentier & Fisch'),('Pilze'),
+  ('Reis/Nudeln/Getreide'),('Salatdressing'),('Warme Salate')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart -> Suppen Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Menüart' AND c.name = 'Suppen'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'plate-wheat' FROM base
+JOIN (VALUES('Einlagen'),('Gebundene'),('Klare'),('Spezial')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Menüart -> Vorspeisen Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Menüart' AND c.name = 'Vorspeisen'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'plate-wheat' FROM base
+JOIN (VALUES('Kalt'),('Warm')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Spezielles
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Spezielles')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'star' FROM g
+JOIN (VALUES
+  ('Babynahrung'),('Camping'),('cross-cooking'),('Ernährungskonzepte'),('Festlich'),('Fingerfood'),('Geheimrezepte'),('Kinder'),('Party'),
+  ('Raffiniert & preiswert'),('Resteverwertung'),('Saucen & Dips'),('Schnell und einfach'),('Studentenküche'),('Wursten')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Spezielles -> Ernährungskonzepte Unterkategorien
+WITH base AS (
+  SELECT c.id, c.group_id FROM recipe_categories c
+  JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Spezielles' AND c.name = 'Ernährungskonzepte'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT base.group_id, x.name, base.id, 'seedling' FROM base
+JOIN (VALUES('Diabetiker'),('Fettarm'),('Kalorienarm'),('Low fat'),('Trennkost'),('Vegan'),('Vegetarisch'),('Vollwert')) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Regional (Hauptregionen)
+WITH g AS (SELECT id FROM recipe_category_groups WHERE name = 'Regional')
+INSERT INTO recipe_categories (group_id, name, icon)
+SELECT g.id, x.name, 'globe' FROM g
+JOIN (VALUES
+  ('Afrika'),('Amerika'),('Asien'),('Australien'),('Europa'),('Karibik & Exotik'),('Mittlerer und Naher Osten'),('Osteuropa')
+) AS x(name) ON TRUE
+ON CONFLICT (group_id, name) DO NOTHING;
+
+-- Regional -> Unterregionen
+WITH base AS (
+  SELECT c.id, c.name, c.group_id
+  FROM recipe_categories c JOIN recipe_category_groups g ON g.id = c.group_id
+  WHERE g.name = 'Regional'
+), europe AS (
+  SELECT id, group_id FROM base WHERE name = 'Europa'
+), africa AS (
+  SELECT id, group_id FROM base WHERE name = 'Afrika'
+), america AS (
+  SELECT id, group_id FROM base WHERE name = 'Amerika'
+), asia AS (
+  SELECT id, group_id FROM base WHERE name = 'Asien'
+)
+INSERT INTO recipe_categories (group_id, name, parent_category_id, icon)
+SELECT t.group_id, v.name, t.id, 'globe' FROM (
+  SELECT 'Europa'::text AS parent, id, group_id FROM europe
+  UNION ALL SELECT 'Afrika', id, group_id FROM africa
+  UNION ALL SELECT 'Amerika', id, group_id FROM america
+  UNION ALL SELECT 'Asien', id, group_id FROM asia
+) t
+JOIN (
+  VALUES
+  ('Europa','Belgien'),('Europa','Deutschland'),('Europa','Dänemark'),('Europa','Finnland'),('Europa','Frankreich'),('Europa','Griechenland'),('Europa','Großbritannien & Irland'),('Europa','Italien'),('Europa','Luxemburg'),('Europa','Malta'),('Europa','Niederlande'),('Europa','Norwegen'),('Europa','Polen'),('Europa','Portugal'),('Europa','Russland'),('Europa','Schweden'),('Europa','Schweiz'),('Europa','Spanien'),('Europa','Tschechien'),('Europa','Türkei'),('Europa','Ungarn'),('Europa','Weißrussland'),('Europa','Österreich'),
+  ('Afrika','Marokko'),('Afrika','Südafrika'),('Afrika','Ägypten'),
+  ('Amerika','Lateinamerika'),('Amerika','Mexico'),('Amerika','USA & Kanada'),
+  ('Asien','Chinesisch'),('Asien','Indisch'),('Asien','Japanisch'),('Asien','Koreanisch'),('Asien','Thailand'),('Asien','Vietnam')
+) v(parent, name) ON v.parent = t.parent
+ON CONFLICT (group_id, name) DO NOTHING;
 
 -- =====================================================
 -- VIEWS - Convenient data access
@@ -515,14 +736,16 @@ ON CONFLICT (name) DO NOTHING;
 CREATE VIEW recipes_with_details AS
 SELECT 
   r.*,
-  rc.name as category_name,
-  rc.icon as category_icon,
   creator.email as creator_email,
-  creator.raw_user_meta_data->>'full_name' as creator_name
+  creator.raw_user_meta_data->>'full_name' as creator_name,
+  COALESCE(json_agg(json_build_object('id', rc.id, 'name', rc.name, 'icon', rc.icon))
+           FILTER (WHERE rc.id IS NOT NULL), '[]'::json) AS categories
 FROM recipes r
-LEFT JOIN recipe_categories rc ON r.category_id = rc.id
 LEFT JOIN auth.users creator ON r.created_by = creator.id
-WHERE r.is_deleted = FALSE;
+LEFT JOIN recipe_categories_map rcm ON rcm.recipe_id = r.id
+LEFT JOIN recipe_categories rc ON rc.id = rcm.category_id
+WHERE r.is_deleted = FALSE
+GROUP BY r.id, creator.email, creator.raw_user_meta_data;
 
 -- View showing recipe ingredients with all details
 CREATE VIEW recipe_ingredients_with_details AS
