@@ -42,19 +42,98 @@ END;
 
 -- Recipe units
 UPDATE recipe_units SET sort_order = CASE name
-  WHEN 'Stück' THEN 1
-  WHEN 'Milliliter' THEN 2
-  WHEN 'Liter' THEN 3
-  WHEN 'Gramm' THEN 4
-  WHEN 'Kilogramm' THEN 5
-  WHEN 'Packungen' THEN 6
-  WHEN 'Flaschen' THEN 7
-  WHEN 'Kästen' THEN 8
-  WHEN 'Boxen' THEN 9
-  WHEN 'Gläser' THEN 10
-  WHEN 'Dosen' THEN 11
-  WHEN 'Bund' THEN 12
-  WHEN 'Tuben' THEN 13
+  WHEN 'Becher' THEN 1
+  WHEN 'Beet(e)' THEN 2
+  WHEN 'Beutel' THEN 3
+  WHEN 'Blatt' THEN 4
+  WHEN 'Blätter' THEN 5
+  WHEN 'Bund' THEN 6
+  WHEN 'Bündel' THEN 7
+  WHEN 'cl' THEN 8
+  WHEN 'cm' THEN 9
+  WHEN 'dicke' THEN 10
+  WHEN 'dl' THEN 11
+  WHEN 'Dose(n)' THEN 12
+  WHEN 'dünne' THEN 13
+  WHEN 'Ecke(n)' THEN 14
+  WHEN 'Eimer' THEN 15
+  WHEN 'einige' THEN 16
+  WHEN 'EL' THEN 17
+  WHEN 'EL, gehäuft' THEN 18
+  WHEN 'EL, gestr.' THEN 19
+  WHEN 'etwas' THEN 20
+  WHEN 'evtl.' THEN 21
+  WHEN 'extra' THEN 22
+  WHEN 'Fässchen' THEN 23
+  WHEN 'Fläschchen' THEN 24
+  WHEN 'Flasche(n)' THEN 25
+  WHEN 'g' THEN 26
+  WHEN 'Glas' THEN 27
+  WHEN 'Gläser' THEN 28
+  WHEN 'große' THEN 29
+  WHEN 'großen' THEN 30
+  WHEN 'großer' THEN 31
+  WHEN 'großes' THEN 32
+  WHEN 'halbe' THEN 33
+  WHEN 'Halm(e)' THEN 34
+  WHEN 'Handvoll' THEN 35
+  WHEN 'Kästchen' THEN 36
+  WHEN 'kg' THEN 37
+  WHEN 'kleine' THEN 38
+  WHEN 'kleiner' THEN 39
+  WHEN 'kleines' THEN 40
+  WHEN 'Knolle(n)' THEN 41
+  WHEN 'Kopf' THEN 42
+  WHEN 'Köpfe' THEN 43
+  WHEN 'Körner' THEN 44
+  WHEN 'Kugel(n)' THEN 45
+  WHEN 'Liter' THEN 46
+  WHEN 'mehr' THEN 47
+  WHEN 'mg' THEN 48
+  WHEN 'ml' THEN 49
+  WHEN 'Msp.' THEN 50
+  WHEN 'n. B.' THEN 51
+  WHEN 'Paar' THEN 52
+  WHEN 'Paket(e)' THEN 53
+  WHEN 'Pck.' THEN 54
+  WHEN 'Pkt.' THEN 55
+  WHEN 'Platte(n)' THEN 56
+  WHEN 'Port.' THEN 57
+  WHEN 'Prise(n)' THEN 58
+  WHEN 'Prozent %' THEN 59
+  WHEN 'Riegel' THEN 60
+  WHEN 'Ring(e)' THEN 61
+  WHEN 'Rippe(n)' THEN 62
+  WHEN 'Rispe(n)' THEN 63
+  WHEN 'Rolle(n)' THEN 64
+  WHEN 'Schälchen' THEN 65
+  WHEN 'Scheibe(n)' THEN 66
+  WHEN 'Schuss' THEN 67
+  WHEN 'Spritzer' THEN 68
+  WHEN 'Stange(n)' THEN 69
+  WHEN 'Stängel' THEN 70
+  WHEN 'Staude(n)' THEN 71
+  WHEN 'Stick(s)' THEN 72
+  WHEN 'Stiel(e)' THEN 73
+  WHEN 'Streifen' THEN 74
+  WHEN 'Stück(e)' THEN 75
+  WHEN 'Tablette(n)' THEN 76
+  WHEN 'Tafel(n)' THEN 77
+  WHEN 'Tasse(n)' THEN 78
+  WHEN 'Teil(e)' THEN 79
+  WHEN 'TL' THEN 80
+  WHEN 'TL, gehäuft' THEN 81
+  WHEN 'TL, gestr.' THEN 82
+  WHEN 'Topf' THEN 83
+  WHEN 'Tropfen' THEN 84
+  WHEN 'Tube(n)' THEN 85
+  WHEN 'Tüte(n)' THEN 86
+  WHEN 'viel' THEN 87
+  WHEN 'wenig' THEN 88
+  WHEN 'Würfel' THEN 89
+  WHEN 'Wurzel(n)' THEN 90
+  WHEN 'Zehe(n)' THEN 91
+  WHEN 'Zweig(e)' THEN 92
   ELSE sort_order
 END;
 
