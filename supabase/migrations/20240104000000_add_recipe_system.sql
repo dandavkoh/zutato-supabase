@@ -70,6 +70,32 @@ ALTER TABLE recipe_units ENABLE ROW LEVEL SECURITY;
 CREATE TRIGGER update_recipe_units_updated_at BEFORE UPDATE ON recipe_units
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- ======================================================
+-- 1b. RECIPE_UNITS_TO_GROCERY_UNITS_MAP TABLE - Mapping between recipe and grocery units
+-- ======================================================
+-- Maps recipe units to grocery units for conversion when creating shopping lists from recipes
+-- Read-only for normal users, managed by admins
+
+CREATE TABLE recipe_units_to_grocery_units_map (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  recipe_unit_id UUID NOT NULL REFERENCES recipe_units(id) ON DELETE CASCADE,
+  grocery_unit_id UUID NOT NULL REFERENCES grocery_units(id) ON DELETE CASCADE,
+  conversion_factor DECIMAL(10,4) NOT NULL DEFAULT 1.0,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  -- Ensure unique mapping per recipe unit
+  UNIQUE(recipe_unit_id, grocery_unit_id)
+);
+
+-- Enable Row Level Security for data protection
+ALTER TABLE recipe_units_to_grocery_units_map ENABLE ROW LEVEL SECURITY;
+
+-- Timestamp trigger for recipe_units_to_grocery_units_map
+CREATE TRIGGER update_recipe_units_to_grocery_units_map_updated_at BEFORE UPDATE ON recipe_units_to_grocery_units_map
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- =====================================================
 -- 2. RECIPES TABLE - Main recipe information
 -- =====================================================
@@ -233,6 +259,10 @@ CREATE INDEX idx_recipes_name_trgm ON recipes USING gin(name gin_trgm_ops);
 CREATE INDEX idx_recipe_ingredient_sections_recipe_id ON recipe_ingredient_sections(recipe_id);
 CREATE INDEX idx_recipe_ingredient_sections_sort_order ON recipe_ingredient_sections(sort_order);
 
+-- Recipe units to grocery units mapping indexes
+CREATE INDEX idx_recipe_units_to_grocery_units_map_recipe_unit_id ON recipe_units_to_grocery_units_map(recipe_unit_id);
+CREATE INDEX idx_recipe_units_to_grocery_units_map_grocery_unit_id ON recipe_units_to_grocery_units_map(grocery_unit_id);
+
 -- Recipe ingredient indexes
 CREATE INDEX idx_recipe_ingredients_recipe_id ON recipe_ingredients(recipe_id);
 CREATE INDEX idx_recipe_ingredients_section_id ON recipe_ingredients(section_id);
@@ -332,6 +362,34 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Convert recipe unit to grocery unit with conversion factor
+CREATE OR REPLACE FUNCTION convert_recipe_unit_to_grocery_unit(
+  p_recipe_unit_id UUID,
+  p_quantity DECIMAL(10,2)
+)
+RETURNS TABLE(
+  grocery_unit_id UUID,
+  grocery_unit_name TEXT,
+  grocery_unit_short_name TEXT,
+  converted_quantity DECIMAL(10,2),
+  conversion_factor DECIMAL(10,4),
+  notes TEXT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    gu.id,
+    gu.name,
+    gu.short_name,
+    (p_quantity * rugum.conversion_factor)::DECIMAL(10,2),
+    rugum.conversion_factor,
+    rugum.notes
+  FROM recipe_units_to_grocery_units_map rugum
+  JOIN grocery_units gu ON rugum.grocery_unit_id = gu.id
+  WHERE rugum.recipe_unit_id = p_recipe_unit_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- =====================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =====================================================
@@ -345,6 +403,16 @@ CREATE POLICY "Everyone can read recipe_units" ON recipe_units
   FOR SELECT USING (true);
 
 -- No write policies for recipe_units to enforce read-only access
+
+-- =====================================================
+-- RECIPE_UNITS_TO_GROCERY_UNITS_MAP POLICIES (Read-only for normal users)
+-- =====================================================
+
+-- Everyone can read recipe_units_to_grocery_units_map
+CREATE POLICY "Everyone can read recipe_units_to_grocery_units_map" ON recipe_units_to_grocery_units_map
+  FOR SELECT USING (true);
+
+-- No write policies for recipe_units_to_grocery_units_map to enforce read-only access
 
 -- =====================================================
 -- RECIPES POLICIES
@@ -591,6 +659,63 @@ INSERT INTO recipe_units (name, short_name) VALUES
   ('Zehe(n)', ''),
   ('Zweig(e)', '')
 ON CONFLICT (name) DO NOTHING;
+
+-- Seed data for recipe_units_to_grocery_units_map
+-- Maps common recipe units to grocery units with conversion factors
+INSERT INTO recipe_units_to_grocery_units_map (recipe_unit_id, grocery_unit_id, conversion_factor, notes) VALUES
+  -- Weight conversions
+  ((SELECT id FROM recipe_units WHERE name = 'g'), (SELECT id FROM grocery_units WHERE name = 'Gramm'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'kg'), (SELECT id FROM grocery_units WHERE name = 'Kilogramm'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'mg'), (SELECT id FROM grocery_units WHERE name = 'Gramm'), 0.001, 'Milligram to gram conversion'),
+  
+  -- Volume conversions
+  ((SELECT id FROM recipe_units WHERE name = 'ml'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Liter'), (SELECT id FROM grocery_units WHERE name = 'Liter'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'cl'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 10.0, 'Centiliter to milliliter conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'dl'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 100.0, 'Deciliter to milliliter conversion'),
+  
+  -- Spoon measurements (approximate) - map to Milliliter
+  ((SELECT id FROM recipe_units WHERE name = 'EL'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 15.0, 'Tablespoon to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'EL, gehäuft'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 20.0, 'Heaped tablespoon to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'EL, gestr.'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 12.0, 'Leveled tablespoon to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'TL'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 5.0, 'Teaspoon to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'TL, gehäuft'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 7.0, 'Heaped teaspoon to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'TL, gestr.'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 4.0, 'Leveled teaspoon to milliliter (approximate)'),
+  
+  -- Cup measurements (approximate) - map to Milliliter
+  ((SELECT id FROM recipe_units WHERE name = 'Becher'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 250.0, 'Cup to milliliter (approximate)'),
+  ((SELECT id FROM recipe_units WHERE name = 'Tasse(n)'), (SELECT id FROM grocery_units WHERE name = 'Milliliter'), 150.0, 'Tea cup to milliliter (approximate)'),
+  
+  -- Piece-based conversions - map to Stück
+  ((SELECT id FROM recipe_units WHERE name = 'Stück(e)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Kopf'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Head to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Köpfe'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Heads to pieces conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Knolle(n)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Tuber to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Zehe(n)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Clove to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Scheibe(n)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Slice to piece conversion'),
+  
+  -- Bundle-based conversions - map to Bund
+  ((SELECT id FROM recipe_units WHERE name = 'Bund'), (SELECT id FROM grocery_units WHERE name = 'Bund'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Bündel'), (SELECT id FROM grocery_units WHERE name = 'Bund'), 1.0, 'Bundle to bundle conversion'),
+  
+  -- Container-based conversions - map to available grocery units
+  ((SELECT id FROM recipe_units WHERE name = 'Dose(n)'), (SELECT id FROM grocery_units WHERE name = 'Dosen'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Glas'), (SELECT id FROM grocery_units WHERE name = 'Gläser'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Gläser'), (SELECT id FROM grocery_units WHERE name = 'Gläser'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Flasche(n)'), (SELECT id FROM grocery_units WHERE name = 'Flaschen'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Tube(n)'), (SELECT id FROM grocery_units WHERE name = 'Tuben'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Tüte(n)'), (SELECT id FROM grocery_units WHERE name = 'Packungen'), 1.0, 'Bag to package conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Paket(e)'), (SELECT id FROM grocery_units WHERE name = 'Packungen'), 1.0, 'Direct conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Pck.'), (SELECT id FROM grocery_units WHERE name = 'Packungen'), 1.0, 'Package abbreviation to package conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Pkt.'), (SELECT id FROM grocery_units WHERE name = 'Packungen'), 1.0, 'Package abbreviation to package conversion'),
+  
+  -- Special conversions - map to Stück
+  ((SELECT id FROM recipe_units WHERE name = 'Port.'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Portion to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Teil(e)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Part to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Riegel'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Bar to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Tafel(n)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Bar to piece conversion'),
+  ((SELECT id FROM recipe_units WHERE name = 'Tablette(n)'), (SELECT id FROM grocery_units WHERE name = 'Stück'), 1.0, 'Tablet to piece conversion')
+ON CONFLICT (recipe_unit_id, grocery_unit_id) DO NOTHING;
 
 -- Insert default recipe category groups
 INSERT INTO recipe_category_groups (name, icon, sort_order) VALUES
@@ -860,6 +985,24 @@ JOIN recipes r ON rs.recipe_id = r.id
 WHERE r.is_deleted = FALSE
 ORDER BY rs.recipe_id, rs.step_number;
 
+-- View showing recipe units mapped to grocery units
+CREATE VIEW recipe_units_mapped_to_grocery_units AS
+SELECT 
+  ru.id as recipe_unit_id,
+  ru.name as recipe_unit_name,
+  ru.short_name as recipe_unit_short_name,
+  gu.id as grocery_unit_id,
+  gu.name as grocery_unit_name,
+  gu.short_name as grocery_unit_short_name,
+  rugum.conversion_factor,
+  rugum.notes,
+  rugum.created_at,
+  rugum.updated_at
+FROM recipe_units ru
+LEFT JOIN recipe_units_to_grocery_units_map rugum ON ru.id = rugum.recipe_unit_id
+LEFT JOIN grocery_units gu ON rugum.grocery_unit_id = gu.id
+ORDER BY ru.name, gu.name;
+
 -- =====================================================
 -- UTILITY FUNCTIONS - Recipe management
 -- =====================================================
@@ -934,8 +1077,10 @@ USING (bucket_id = 'public-bucket' AND owner = auth.uid());
 -- ✅ Flexible ingredient system (product_groups, products, or custom ingredients)
 -- ✅ Ingredient sections for organized ingredient lists
 -- ✅ Step-by-step preparation instructions
+-- ✅ Recipe units with grocery units mapping for shopping list conversion
 -- ✅ Row Level Security protecting all data
 -- ✅ Helper functions for ingredient display and recipe management
+-- ✅ Unit conversion functions for recipe-to-shopping-list workflow
 -- ✅ Automatic timestamp management
 -- ✅ Performance-optimized indexes
 -- ✅ Convenient views for data access
@@ -945,4 +1090,5 @@ USING (bucket_id = 'public-bucket' AND owner = auth.uid());
 -- 1. Test the API endpoints
 -- 2. Create frontend integration
 -- 3. Add recipe search and filtering functionality
+-- 4. Implement recipe-to-shopping-list conversion using unit mappings
 -- ===================================================== 
