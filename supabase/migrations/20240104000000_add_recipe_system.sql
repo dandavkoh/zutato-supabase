@@ -106,6 +106,10 @@ CREATE TABLE recipes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
+  -- Draft support and optional descriptions
+  is_draft BOOLEAN NOT NULL DEFAULT FALSE,
+  user_description TEXT,
+  admin_description TEXT,
   portions INTEGER NOT NULL DEFAULT 1,
   difficulty TEXT CHECK (difficulty IN ('einfach', 'mittel', 'schwer')) DEFAULT 'mittel',
   working_time_minutes INTEGER,
