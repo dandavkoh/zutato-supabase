@@ -1,5 +1,5 @@
 {
   "devDependencies": {
-    "supabase": "^2.31.4"
+    "supabase": "^2.40.7"
   }
 }
